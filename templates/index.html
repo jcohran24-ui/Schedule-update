@@ -1,0 +1,161 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Trade Schedule</title>
+  <link rel="preconnect" href="https://cdn.jsdelivr.net">
+  <link rel="stylesheet" href="/static/styles.css">
+</head>
+<body>
+  <div id="toast" class="toast hidden"></div>
+
+  <section id="setupScreen" class="screen centered {% if is_configured %}hidden{% endif %}">
+    <div class="card narrow">
+      <h1>Trade Schedule</h1>
+      <p>This deployment is missing Supabase environment variables.</p>
+      <code>SUPABASE_URL</code><br><code>SUPABASE_ANON_KEY</code><br><code>SUPABASE_SERVICE_ROLE_KEY</code>
+    </div>
+  </section>
+
+  <section id="loginScreen" class="screen centered {% if not is_configured %}hidden{% endif %}">
+    <form id="loginForm" class="card narrow">
+      <div class="brand-mark">TS</div>
+      <h1>Trade Schedule</h1>
+      <p class="muted">GC + Subcontractor Schedule Coordination</p>
+      <label>Email<input id="loginEmail" type="email" autocomplete="username" required></label>
+      <label>Password<input id="loginPassword" type="password" autocomplete="current-password" required></label>
+      <button class="primary" type="submit">Sign In</button>
+      <p id="loginError" class="error"></p>
+    </form>
+  </section>
+
+  <section id="appScreen" class="hidden">
+    <header class="topbar">
+      <div>
+        <div class="top-title">Trade Schedule</div>
+        <div id="projectLabel" class="muted small">No project selected</div>
+      </div>
+      <div class="top-actions">
+        <span id="userBadge" class="badge"></span>
+        <button id="logoutBtn" class="ghost">Sign Out</button>
+      </div>
+    </header>
+
+    <div class="app-shell">
+      <aside class="sidebar">
+        <button class="nav-btn active" data-view="schedule">Schedule</button>
+        <button class="nav-btn gc-only" data-view="history">Change History</button>
+        <button class="nav-btn admin-only" data-view="admin">Admin</button>
+      </aside>
+
+      <main class="content">
+        <section id="scheduleView" class="view">
+          <div class="page-head">
+            <div>
+              <h2 id="scheduleTitle">Remaining Schedule</h2>
+              <p id="scheduleSubtitle" class="muted"></p>
+            </div>
+            <div class="inline-fields">
+              <select id="projectSelect"></select>
+              <button id="refreshBtn" class="ghost">Refresh</button>
+            </div>
+          </div>
+
+          <div id="stats" class="stats"></div>
+
+          <div class="toolbar card">
+            <div class="segmented">
+              <button class="range-btn active" data-range="all">All Remaining</button>
+              <button class="range-btn" data-range="4">4 Week</button>
+              <button class="range-btn" data-range="6">6 Week</button>
+              <button class="range-btn gc-only" data-range="changed">Changed</button>
+            </div>
+            <input id="searchInput" type="search" placeholder="Search activity, area, trade...">
+            <select id="tradeFilter" class="gc-only"><option value="">All Trades</option></select>
+            <select id="statusFilter">
+              <option value="">All Statuses</option>
+              <option>Not Started</option><option>Starting Soon</option><option>In Progress</option>
+              <option>Delayed</option><option>On Hold</option><option>Complete</option>
+            </select>
+          </div>
+
+          <div class="table-wrap card">
+            <table>
+              <thead>
+                <tr>
+                  <th class="gc-only">Trade</th><th>Activity ID</th><th>Area</th><th>Activity</th>
+                  <th>Baseline Start</th><th>Current Start</th><th>Baseline Finish</th><th>Current Finish</th>
+                  <th>Status</th><th>%</th><th></th>
+                </tr>
+              </thead>
+              <tbody id="activityBody"></tbody>
+            </table>
+            <div id="emptyState" class="empty hidden">No activities match this view.</div>
+          </div>
+        </section>
+
+        <section id="historyView" class="view hidden">
+          <div class="page-head"><div><h2>Change History</h2><p class="muted">Who changed what, and when.</p></div></div>
+          <div class="table-wrap card">
+            <table><thead><tr><th>Date</th><th>Activity</th><th>User</th><th>Start</th><th>Finish</th><th>Status</th><th>Comment</th></tr></thead><tbody id="historyBody"></tbody></table>
+          </div>
+        </section>
+
+        <section id="adminView" class="view hidden">
+          <div class="page-head"><div><h2>Admin</h2><p class="muted">Projects, trades, users, and schedule imports.</p></div></div>
+          <div class="admin-grid">
+            <div class="card">
+              <h3>Projects</h3>
+              <form id="projectForm" class="stack"><input id="newProjectName" placeholder="Project name" required><button class="primary">Add Project</button></form>
+              <div id="projectList" class="mini-list"></div>
+            </div>
+            <div class="card">
+              <h3>Companies / Trades</h3>
+              <form id="companyForm" class="stack"><input id="newCompanyName" placeholder="Company name" required><input id="newTradeName" placeholder="Trade (optional)"><button class="primary">Add Company</button></form>
+              <div id="companyList" class="mini-list"></div>
+            </div>
+            <div class="card span-2">
+              <h3>Upload Remaining Schedule</h3>
+              <p class="muted small">Excel or CSV. Recommended columns: Activity ID, Activity Name, Start, Finish, Duration, Trade/Company, Area.</p>
+              <div class="upload-row"><input id="scheduleFile" type="file" accept=".xlsx,.xls,.csv"><button id="uploadBtn" class="primary" type="button">Import Schedule</button></div>
+              <div id="uploadResult" class="small"></div>
+            </div>
+            <div class="card span-2">
+              <h3>User Management</h3>
+              <form id="userForm" class="user-grid">
+                <input id="userName" placeholder="Full name" required>
+                <input id="userEmail" type="email" placeholder="Email" required>
+                <input id="userPassword" type="password" minlength="8" placeholder="Temporary password (8+)" required>
+                <select id="userRole"><option value="sub">Subcontractor</option><option value="gc">GC</option><option value="gc_admin">GC Admin</option></select>
+                <select id="userCompany"><option value="">Select company</option></select>
+                <button class="primary">Create User</button>
+              </form>
+              <div class="table-wrap inner"><table><thead><tr><th>Name</th><th>Email</th><th>Role</th><th>Company</th><th>Active</th><th></th></tr></thead><tbody id="userBody"></tbody></table></div>
+            </div>
+          </div>
+        </section>
+      </main>
+    </div>
+  </section>
+
+  <div id="editModal" class="modal hidden">
+    <div class="modal-card">
+      <div class="modal-head"><div><h3 id="editTitle">Update Activity</h3><p id="editCode" class="muted"></p></div><button id="closeModal" class="icon-btn">×</button></div>
+      <div class="baseline-box"><span>Baseline</span><strong id="baselineDates"></strong></div>
+      <form id="editForm" class="stack">
+        <input id="editId" type="hidden">
+        <div class="two-col"><label>Current Start<input id="editStart" type="date"></label><label>Current Finish<input id="editFinish" type="date"></label></div>
+        <div class="two-col"><label>Status<select id="editStatus"><option>Not Started</option><option>Starting Soon</option><option>In Progress</option><option>Complete</option><option>Delayed</option><option>On Hold</option></select></label><label>Percent Complete<input id="editPercent" type="number" min="0" max="100"></label></div>
+        <label>Update / Delay Comment<textarea id="editNotes" rows="4" placeholder="What changed, why, or what is needed?"></textarea></label>
+        <button class="primary">Save Update</button>
+      </form>
+    </div>
+  </div>
+
+  <script>window.APP_CONFIG = {supabaseUrl: {{ supabase_url|tojson }}, supabaseAnonKey: {{ supabase_anon_key|tojson }}};</script>
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+  <script src="/static/app.js"></script>
+</body>
+</html>
