@@ -92,3 +92,20 @@ Subcontractors can update only these columns on activities assigned to their com
 - Notes
 
 They cannot change company assignment, baseline dates, Activity ID, or Activity Name through the database API.
+
+## Activity Admin upgrade
+
+This version adds a separate `is_activity_admin` permission. It is intended to be `true` for only one user (the schedule owner).
+
+For an existing deployment:
+1. Open `activity_admin_migration.sql`.
+2. Replace `YOUR_EMAIL@example.com` with your login email.
+3. Run the full migration in Supabase SQL Editor.
+4. Redeploy this app version to Render.
+
+Permissions after the migration:
+- Activity Admin: can add, edit, reassign, and delete activities; can also update progress fields.
+- Other GC / GC Admin users: view-only for schedule activities (GC Admin can still manage projects, companies, and users).
+- Subcontractors: can update only their own company's current dates, status, percent complete, and notes.
+
+The Admin page includes an **Activity Management** table visible only to the Activity Admin account.

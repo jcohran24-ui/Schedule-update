@@ -25,8 +25,12 @@ create table if not exists public.profiles (
   role text not null check (role in ('gc_admin','gc','sub')),
   company_id uuid references public.companies(id) on delete set null,
   active boolean not null default true,
+  is_activity_admin boolean not null default false,
   created_at timestamptz not null default now()
 );
+
+create unique index if not exists one_activity_admin_only
+on public.profiles ((is_activity_admin)) where is_activity_admin = true;
 
 create table if not exists public.activities (
   id uuid primary key default gen_random_uuid(),
@@ -100,6 +104,19 @@ as $$
   );
 $$;
 
+create or replace function public.is_activity_admin()
+returns boolean
+language sql
+stable
+security definer
+set search_path = public
+as $$
+  select exists (
+    select 1 from public.profiles p
+    where p.id = auth.uid() and p.active = true and p.is_activity_admin = true
+  );
+$$;
+
 create or replace function public.my_company_id()
 returns uuid
 language sql
@@ -109,6 +126,37 @@ set search_path = public
 as $$
   select company_id from public.profiles where id = auth.uid() and active = true;
 $$;
+
+create or replace function public.protect_activity_fields()
+returns trigger
+language plpgsql
+security definer
+set search_path = public
+as $$
+begin
+  if not public.is_activity_admin() then
+    if old.id is distinct from new.id
+       or old.project_id is distinct from new.project_id
+       or old.company_id is distinct from new.company_id
+       or old.activity_code is distinct from new.activity_code
+       or old.activity_name is distinct from new.activity_name
+       or old.area is distinct from new.area
+       or old.original_start is distinct from new.original_start
+       or old.original_finish is distinct from new.original_finish
+       or old.duration_days is distinct from new.duration_days
+       or old.source_upload is distinct from new.source_upload
+       or old.created_at is distinct from new.created_at then
+      raise exception 'Only the Activity Admin can edit activity setup fields';
+    end if;
+  end if;
+  return new;
+end;
+$$;
+
+drop trigger if exists trg_protect_activity_fields on public.activities;
+create trigger trg_protect_activity_fields
+before update on public.activities
+for each row execute function public.protect_activity_fields();
 
 create or replace function public.log_activity_update()
 returns trigger
@@ -172,12 +220,14 @@ create policy "gc sees all activities" on public.activities
 for select to authenticated using (public.is_gc());
 create policy "sub sees own company activities" on public.activities
 for select to authenticated using (company_id = public.my_company_id());
-create policy "gc admin imports activities" on public.activities
-for insert to authenticated with check (public.is_gc_admin());
-create policy "gc updates all activities" on public.activities
-for update to authenticated using (public.is_gc()) with check (public.is_gc());
+create policy "activity admin inserts activities" on public.activities
+for insert to authenticated with check (public.is_activity_admin());
+create policy "activity admin updates all activities" on public.activities
+for update to authenticated using (public.is_activity_admin()) with check (public.is_activity_admin());
 create policy "sub updates own activities" on public.activities
 for update to authenticated using (company_id = public.my_company_id()) with check (company_id = public.my_company_id());
+create policy "activity admin deletes activities" on public.activities
+for delete to authenticated using (public.is_activity_admin());
 
 -- History
 create policy "gc sees all history" on public.activity_history
@@ -190,20 +240,21 @@ for select to authenticated using (
 -- Upload log
 create policy "gc sees uploads" on public.schedule_uploads
 for select to authenticated using (public.is_gc());
-create policy "gc admin inserts uploads" on public.schedule_uploads
-for insert to authenticated with check (public.is_gc_admin());
+create policy "activity admin inserts uploads" on public.schedule_uploads
+for insert to authenticated with check (public.is_activity_admin());
 
--- Prevent subcontractors from changing activity ownership/baseline/name via the API.
+-- RLS controls row access; trg_protect_activity_fields prevents non-Activity-Admins
+-- from editing ownership, baseline, name, code, area, duration, or source fields.
 revoke update on public.activities from authenticated;
-grant update (current_start, current_finish, status, percent_complete, notes) on public.activities to authenticated;
-grant select on public.activities to authenticated;
-grant insert on public.activities to authenticated;
+grant update on public.activities to authenticated;
+grant select, insert, delete on public.activities to authenticated;
 grant select on public.companies, public.projects, public.profiles, public.activity_history, public.schedule_uploads to authenticated;
 grant insert, update on public.companies, public.projects to authenticated;
 grant insert on public.schedule_uploads to authenticated;
 
 grant usage, select on sequence public.activity_history_id_seq to authenticated;
 
--- After creating your first Auth user in Supabase, make that person GC Admin with:
--- insert into public.profiles(id,email,full_name,role)
--- values ('AUTH_USER_UUID','you@example.com','Your Name','gc_admin');
+-- After creating your first Auth user in Supabase, make that person GC Admin + the ONLY Activity Admin with:
+-- insert into public.profiles(id,email,full_name,role,is_activity_admin)
+-- values ('AUTH_USER_UUID','you@example.com','Your Name','gc_admin',true);
+-- Keep is_activity_admin = false for every other user.

@@ -20,6 +20,8 @@ const esc = (s='') => String(s).replace(/[&<>'"]/g, c => ({'&':'&amp;','<':'&lt;
 function toast(msg){ const el=$('toast'); el.textContent=msg; el.classList.remove('hidden'); setTimeout(()=>el.classList.add('hidden'),2600); }
 function isGC(){ return profile && ['gc','gc_admin'].includes(profile.role); }
 function isAdmin(){ return profile && profile.role === 'gc_admin'; }
+function isActivityAdmin(){ return profile && profile.is_activity_admin === true; }
+function canUpdateActivity(){ return profile && (profile.role === 'sub' || isActivityAdmin()); }
 function companyName(id){ return companies.find(c=>c.id===id)?.company_name || 'Unassigned'; }
 function profileName(id){ return profiles.find(p=>p.id===id)?.full_name || profiles.find(p=>p.id===id)?.email || 'User'; }
 
@@ -44,9 +46,11 @@ async function enterApp(s){
   if(error || !p || !p.active){ await sb.auth.signOut(); $('loginError').textContent='Your account is not active or has not been assigned a profile.'; return; }
   profile=p;
   $('loginScreen').classList.add('hidden'); $('appScreen').classList.remove('hidden');
-  $('userBadge').textContent=`${p.full_name || p.email} • ${p.role==='sub'?'Subcontractor':p.role==='gc_admin'?'GC Admin':'GC'}`;
+  $('userBadge').textContent=`${p.full_name || p.email} • ${p.role==='sub'?'Subcontractor':p.role==='gc_admin'?'GC Admin':'GC'}${p.is_activity_admin?' • Activity Editor':''}`;
   document.querySelectorAll('.gc-only').forEach(el=>el.classList.toggle('hidden',!isGC()));
-  document.querySelectorAll('.admin-only').forEach(el=>el.classList.toggle('hidden',!isAdmin()));
+  document.querySelectorAll('.admin-only').forEach(el=>el.classList.toggle('hidden',!(isAdmin() || isActivityAdmin())));
+  document.querySelectorAll('.gc-admin-only').forEach(el=>el.classList.toggle('hidden',!isAdmin()));
+  document.querySelectorAll('.activity-admin-only').forEach(el=>el.classList.toggle('hidden',!isActivityAdmin()));
   $('scheduleTitle').textContent = p.role==='sub' ? 'My Activities' : 'Remaining Schedule';
   await loadReferenceData();
   await loadActivities();
@@ -56,7 +60,7 @@ async function loadReferenceData(){
   let {data:pr}=await sb.from('projects').select('*').order('project_name'); projects=pr||[];
   let {data:co}=await sb.from('companies').select('*').order('company_name'); companies=co||[];
   if(isGC()){ let {data:pf}=await sb.from('profiles').select('*').order('full_name'); profiles=pf||[]; }
-  renderProjectOptions(); renderCompanies(); renderUsers();
+  renderProjectOptions(); renderCompanies(); renderUsers(); renderAdminActivities();
   if(!selectedProjectId && projects.length) selectedProjectId=projects[0].id;
   if(selectedProjectId) $('projectSelect').value=selectedProjectId;
   updateProjectLabel();
@@ -86,7 +90,7 @@ async function loadActivities(){
   let q=sb.from('activities').select('*').eq('project_id',selectedProjectId).order('current_start',{ascending:true,nullsFirst:false});
   const {data,error}=await q;
   if(error){toast(error.message);return;}
-  activities=data||[]; renderActivities(); renderStats();
+  activities=data||[]; renderActivities(); renderStats(); renderAdminActivities();
 }
 
 function filteredActivities(){
@@ -117,7 +121,7 @@ function renderActivities(){
       <td>${fmt(a.original_start)}</td><td><span class="${startChanged?'changed-date':''}">${fmt(a.current_start)}</span></td>
       <td>${fmt(a.original_finish)}</td><td><span class="${finishChanged?'changed-date':''}">${fmt(a.current_finish)}</span></td>
       <td><span class="status">${esc(a.status)}</span></td><td>${a.percent_complete}%</td>
-      <td><button class="ghost edit-act" data-id="${a.id}">Update</button></td></tr>`;
+      <td>${canUpdateActivity()?`<button class="ghost edit-act" data-id="${a.id}">${isActivityAdmin()?'Edit':'Update'}</button>`:'<span class="muted small">View only</span>'}</td></tr>`;
   }).join('');
   document.querySelectorAll('.edit-act').forEach(b=>b.onclick=()=>openEdit(b.dataset.id));
 }
@@ -134,7 +138,9 @@ function renderStats(){
 document.querySelectorAll('.range-btn').forEach(b=>b.addEventListener('click',()=>{document.querySelectorAll('.range-btn').forEach(x=>x.classList.remove('active'));b.classList.add('active');currentRange=b.dataset.range;renderActivities();}));
 
 function openEdit(id){
+  if(!canUpdateActivity()) return;
   const a=activities.find(x=>x.id===id); if(!a)return;
+  if(isActivityAdmin()){ openAdminActivity(a); return; }
   $('editId').value=a.id;$('editTitle').textContent=a.activity_name;$('editCode').textContent=`${a.activity_code} • ${a.area||'No area'}`;
   $('baselineDates').textContent=`${fmt(a.original_start)} → ${fmt(a.original_finish)}`;$('editStart').value=a.current_start||'';$('editFinish').value=a.current_finish||'';$('editStatus').value=a.status;$('editPercent').value=a.percent_complete;$('editNotes').value=a.notes||'';
   $('editModal').classList.remove('hidden');
@@ -176,6 +182,78 @@ $('userForm')?.addEventListener('submit',async e=>{
   e.target.reset();toast('User created');await loadReferenceData();
 });
 async function toggleUser(id,active){const r=await fetch(`/api/admin/user/${id}/active`,{method:'PATCH',headers:{'Content-Type':'application/json','Authorization':`Bearer ${session.access_token}`},body:JSON.stringify({active})});const data=await r.json();if(!r.ok){toast(data.error||'Could not update user');return;}toast(active?'User activated':'User deactivated');await loadReferenceData();}
+
+function renderAdminActivities(){
+  if(!isActivityAdmin() || !$('adminActivityBody')) return;
+  $('adminActivityBody').innerHTML=activities.map(a=>`<tr>
+    <td>${esc(a.activity_code)}</td><td>${esc(a.activity_name)}</td><td>${esc(companyName(a.company_id))}</td>
+    <td>${esc(a.area||'')}</td><td>${fmt(a.original_start)}</td><td>${fmt(a.original_finish)}</td>
+    <td><button class="ghost admin-edit-act" data-id="${a.id}">Edit</button> <button class="danger admin-delete-act" data-id="${a.id}">Delete</button></td>
+  </tr>`).join('');
+  document.querySelectorAll('.admin-edit-act').forEach(b=>b.onclick=()=>{const a=activities.find(x=>x.id===b.dataset.id);if(a)openAdminActivity(a);});
+  document.querySelectorAll('.admin-delete-act').forEach(b=>b.onclick=()=>deleteActivity(b.dataset.id));
+}
+function populateAdminCompanySelect(selected=''){
+  if(!$('adminActivityCompany')) return;
+  $('adminActivityCompany').innerHTML='<option value="">Unassigned / GC</option>'+companies.map(c=>`<option value="${c.id}">${esc(c.company_name)}</option>`).join('');
+  $('adminActivityCompany').value=selected||'';
+}
+function openAdminActivity(a=null){
+  if(!isActivityAdmin()) return;
+  $('adminActivityId').value=a?.id||'';
+  $('adminActivityModalTitle').textContent=a?'Edit Activity':'Add Activity';
+  $('adminActivityCode').value=a?.activity_code||'';
+  $('adminActivityName').value=a?.activity_name||'';
+  $('adminActivityArea').value=a?.area||'';
+  populateAdminCompanySelect(a?.company_id||'');
+  $('adminBaselineStart').value=a?.original_start||'';
+  $('adminBaselineFinish').value=a?.original_finish||'';
+  $('adminCurrentStart').value=a?.current_start||a?.original_start||'';
+  $('adminCurrentFinish').value=a?.current_finish||a?.original_finish||'';
+  $('adminDuration').value=a?.duration_days??'';
+  $('adminStatus').value=a?.status||'Not Started';
+  $('adminPercent').value=a?.percent_complete??0;
+  $('adminNotes').value=a?.notes||'';
+  $('adminActivityModal').classList.remove('hidden');
+}
+$('addActivityBtn')?.addEventListener('click',()=>openAdminActivity());
+$('closeAdminActivityModal')?.addEventListener('click',()=>$('adminActivityModal').classList.add('hidden'));
+$('adminActivityModal')?.addEventListener('click',e=>{if(e.target===$('adminActivityModal'))$('adminActivityModal').classList.add('hidden')});
+$('adminActivityForm')?.addEventListener('submit',async e=>{
+  e.preventDefault(); if(!isActivityAdmin())return;
+  if(!selectedProjectId){toast('Select a project first');return;}
+  const id=$('adminActivityId').value;
+  const payload={
+    project_id:selectedProjectId,
+    activity_code:$('adminActivityCode').value.trim(),
+    activity_name:$('adminActivityName').value.trim(),
+    company_id:$('adminActivityCompany').value||null,
+    area:$('adminActivityArea').value.trim()||null,
+    original_start:$('adminBaselineStart').value||null,
+    original_finish:$('adminBaselineFinish').value||null,
+    current_start:$('adminCurrentStart').value||null,
+    current_finish:$('adminCurrentFinish').value||null,
+    duration_days:$('adminDuration').value===''?null:Number($('adminDuration').value),
+    status:$('adminStatus').value,
+    percent_complete:Number($('adminPercent').value||0),
+    notes:$('adminNotes').value.trim()||null,
+  };
+  if(!payload.activity_code||!payload.activity_name){toast('Activity ID and Activity Name are required');return;}
+  if(payload.current_start&&payload.current_finish&&payload.current_finish<payload.current_start){toast('Current finish cannot be before current start');return;}
+  if(payload.original_start&&payload.original_finish&&payload.original_finish<payload.original_start){toast('Baseline finish cannot be before baseline start');return;}
+  let error;
+  if(id){({error}=await sb.from('activities').update(payload).eq('id',id));}
+  else {({error}=await sb.from('activities').insert(payload));}
+  if(error){toast(error.message);return;}
+  $('adminActivityModal').classList.add('hidden'); toast(id?'Activity saved':'Activity added'); await loadActivities(); renderAdminActivities();
+});
+async function deleteActivity(id){
+  if(!isActivityAdmin())return;
+  const a=activities.find(x=>x.id===id); if(!a)return;
+  if(!confirm(`Delete ${a.activity_code} - ${a.activity_name}? This cannot be undone.`))return;
+  const {error}=await sb.from('activities').delete().eq('id',id); if(error){toast(error.message);return;}
+  toast('Activity deleted'); await loadActivities(); renderAdminActivities();
+}
 
 function normalizedRow(row){ const out={}; Object.entries(row).forEach(([k,v])=>out[String(k).trim().toLowerCase().replace(/[^a-z0-9]+/g,'_')]=v); return out; }
 function pick(o,keys){for(const k of keys){if(o[k]!==undefined && o[k]!==null && String(o[k]).trim()!=='')return o[k];}return null;}
