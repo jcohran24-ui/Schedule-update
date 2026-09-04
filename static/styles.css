@@ -3,3 +3,13 @@
 .danger:hover{background:#fff1f0}
 .wide-modal{max-width:760px}
 .page-head.compact{margin-bottom:12px}
+
+.admin-area-header td{padding:0;background:#eef3f8;border-bottom:1px solid #d8e0ea;position:sticky;top:33px;z-index:2}
+.admin-area-toggle{width:100%;display:flex;align-items:center;gap:9px;text-align:left;background:transparent;color:#172033;border-radius:0;padding:11px 13px;font-size:13px}
+.admin-area-toggle:hover{background:#e5edf6}
+.admin-area-arrow{display:inline-block;width:16px;font-size:12px;color:#475467}
+.admin-area-count{margin-left:auto;color:#697386;font-size:12px;font-weight:700}
+.admin-area-item td{background:#fff}
+
+.activity-admin-actions{display:flex;align-items:center;gap:8px;flex-wrap:wrap;justify-content:flex-end}
+@media (max-width:760px){.activity-admin-actions{width:100%;justify-content:flex-start}.activity-admin-actions button{flex:1 1 auto}}

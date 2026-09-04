@@ -183,16 +183,52 @@ $('userForm')?.addEventListener('submit',async e=>{
 });
 async function toggleUser(id,active){const r=await fetch(`/api/admin/user/${id}/active`,{method:'PATCH',headers:{'Content-Type':'application/json','Authorization':`Bearer ${session.access_token}`},body:JSON.stringify({active})});const data=await r.json();if(!r.ok){toast(data.error||'Could not update user');return;}toast(active?'User activated':'User deactivated');await loadReferenceData();}
 
+const collapsedAdminAreas = new Set();
+function adminAreaNames(){
+  return [...new Set(activities.map(adminAreaLabel))].sort((a,b)=>a.localeCompare(b,undefined,{numeric:true,sensitivity:'base'}));
+}
+function collapseAllAdminAreas(){
+  adminAreaNames().forEach(area=>collapsedAdminAreas.add(area));
+  renderAdminActivities();
+}
+function expandAllAdminAreas(){
+  collapsedAdminAreas.clear();
+  renderAdminActivities();
+}
+function adminAreaLabel(a){
+  if(a.area && String(a.area).trim()) return String(a.area).trim();
+  const name=String(a.activity_name||'').trim();
+  const m=name.match(/^\*{0,2}\s*(MU|FP|GL|EV|SD|A[1-9]|F)(?:\s*[-–—]|\s|$)/i);
+  return m ? m[1].toUpperCase() : 'Other / No Area';
+}
 function renderAdminActivities(){
   if(!isActivityAdmin() || !$('adminActivityBody')) return;
-  $('adminActivityBody').innerHTML=activities.map(a=>`<tr>
-    <td>${esc(a.activity_code)}</td><td>${esc(a.activity_name)}</td><td>${esc(companyName(a.company_id))}</td>
-    <td>${esc(a.area||'')}</td><td>${fmt(a.original_start)}</td><td>${fmt(a.original_finish)}</td>
-    <td><button class="ghost admin-edit-act" data-id="${a.id}">Edit</button> <button class="danger admin-delete-act" data-id="${a.id}">Delete</button></td>
-  </tr>`).join('');
+  const grouped={};
+  activities.forEach(a=>{
+    const area=adminAreaLabel(a);
+    (grouped[area] ||= []).push(a);
+  });
+  const orderedAreas=Object.keys(grouped).sort((a,b)=>a.localeCompare(b,undefined,{numeric:true,sensitivity:'base'}));
+  $('adminActivityBody').innerHTML=orderedAreas.map((area,idx)=>{
+    const key=encodeURIComponent(area);
+    const collapsed=collapsedAdminAreas.has(area);
+    const rows=grouped[area].map(a=>`<tr class="admin-area-item ${collapsed?'hidden':''}" data-admin-area="${key}">
+      <td>${esc(a.activity_code)}</td><td>${esc(a.activity_name)}</td><td>${esc(companyName(a.company_id))}</td>
+      <td>${esc(a.area||adminAreaLabel(a))}</td><td>${fmt(a.original_start)}</td><td>${fmt(a.original_finish)}</td>
+      <td><button class="ghost admin-edit-act" data-id="${a.id}">Edit</button> <button class="danger admin-delete-act" data-id="${a.id}">Delete</button></td>
+    </tr>`).join('');
+    return `<tr class="admin-area-header"><td colspan="7"><button class="admin-area-toggle" type="button" data-area-index="${idx}" aria-expanded="${!collapsed}"><span class="admin-area-arrow">${collapsed?'▶':'▼'}</span><span>${esc(area)}</span><span class="admin-area-count">${grouped[area].length} ${grouped[area].length===1?'activity':'activities'}</span></button></td></tr>${rows}`;
+  }).join('');
+  document.querySelectorAll('.admin-area-toggle').forEach(b=>b.onclick=()=>{
+    const area=orderedAreas[Number(b.dataset.areaIndex)];
+    if(collapsedAdminAreas.has(area)) collapsedAdminAreas.delete(area); else collapsedAdminAreas.add(area);
+    renderAdminActivities();
+  });
   document.querySelectorAll('.admin-edit-act').forEach(b=>b.onclick=()=>{const a=activities.find(x=>x.id===b.dataset.id);if(a)openAdminActivity(a);});
   document.querySelectorAll('.admin-delete-act').forEach(b=>b.onclick=()=>deleteActivity(b.dataset.id));
 }
+$('collapseAllAreasBtn')?.addEventListener('click',collapseAllAdminAreas);
+$('expandAllAreasBtn')?.addEventListener('click',expandAllAdminAreas);
 function populateAdminCompanySelect(selected=''){
   if(!$('adminActivityCompany')) return;
   $('adminActivityCompany').innerHTML='<option value="">Unassigned / GC</option>'+companies.map(c=>`<option value="${c.id}">${esc(c.company_name)}</option>`).join('');
