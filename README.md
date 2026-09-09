@@ -118,3 +118,7 @@ GC Admin users can set a replacement password for any user from Admin > User Man
 ## First-login password change
 
 Run `first_login_password_migration.sql` once in Supabase before deploying this version. New users created from Admin are marked `must_change_password = true`. Their first successful login is restricted to the Change Password screen. After they choose a new 8+ character password, the app clears the flag and opens the schedule. Existing users are not forced to change passwords.
+
+
+## Admin user deletion
+GC Admin users can permanently delete managed users from Admin > User Management. The signed-in admin cannot delete their own account, and the Activity Admin account is protected from deletion. Deleting an Auth user also removes its public profile through the existing ON DELETE CASCADE relationship.

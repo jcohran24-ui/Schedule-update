@@ -133,9 +133,16 @@ function initCompaniesTradesCollapse(){
 }
 function renderUsers(){
   if(!isAdmin() || !$('userBody')) return;
-  $('userBody').innerHTML=profiles.map(p=>`<tr><td>${esc(p.full_name||'')}</td><td>${esc(p.email||'')}</td><td>${esc(p.role)}</td><td>${esc(companyName(p.company_id))}</td><td>${p.active?'Yes':'No'}</td><td class="user-actions"><button class="ghost set-password" data-id="${p.id}">Set Password</button> <button class="ghost toggle-user" data-id="${p.id}" data-active="${p.active}">${p.active?'Deactivate':'Activate'}</button></td></tr>`).join('');
+  $('userBody').innerHTML=profiles.map(p=>{
+    const protectedUser = p.id===profile?.id || p.is_activity_admin===true;
+    const deleteButton = protectedUser
+      ? '<button class="danger" type="button" disabled title="This admin account is protected">Delete</button>'
+      : `<button class="danger delete-user" type="button" data-id="${p.id}">Delete</button>`;
+    return `<tr><td>${esc(p.full_name||'')}</td><td>${esc(p.email||'')}</td><td>${esc(p.role)}</td><td>${esc(companyName(p.company_id))}</td><td>${p.active?'Yes':'No'}</td><td class="user-actions"><button class="ghost set-password" data-id="${p.id}">Set Password</button> <button class="ghost toggle-user" data-id="${p.id}" data-active="${p.active}">${p.active?'Deactivate':'Activate'}</button> ${deleteButton}</td></tr>`;
+  }).join('');
   document.querySelectorAll('.toggle-user').forEach(b=>b.onclick=()=>toggleUser(b.dataset.id,b.dataset.active!=='true'));
   document.querySelectorAll('.set-password').forEach(b=>b.onclick=()=>openPasswordModal(b.dataset.id));
+  document.querySelectorAll('.delete-user').forEach(b=>b.onclick=()=>deleteUser(b.dataset.id));
 }
 function updateProjectLabel(){ const p=projects.find(x=>x.id===selectedProjectId); $('projectLabel').textContent=p?.project_name||'No project selected'; $('scheduleSubtitle').textContent=profile?.role==='sub' ? companyName(profile.company_id) : 'Live subcontractor updates'; }
 
@@ -147,7 +154,7 @@ async function loadActivities(){
   let q=sb.from('activities').select('*').eq('project_id',selectedProjectId).order('current_start',{ascending:true,nullsFirst:false});
   const {data,error}=await q;
   if(error){toast(error.message);return;}
-  activities=data||[]; renderActivities(); renderStats(); renderAdminActivities();
+  activities=data||[]; renderActivities(); renderAdminActivities();
 }
 
 function filteredActivities(){
@@ -175,19 +182,21 @@ function renderActivities(){
     return `<tr>
       <td class="gc-only ${!isGC()?'hidden':''}">${esc(companyName(a.company_id))}</td>
       <td><strong>${esc(a.activity_code)}</strong></td><td>${esc(a.area||'')}</td><td>${esc(a.activity_name)}</td>
-      <td>${fmt(a.original_start)}</td><td><span class="${startChanged?'changed-date':''}">${fmt(a.current_start)}</span></td>
-      <td>${fmt(a.original_finish)}</td><td><span class="${finishChanged?'changed-date':''}">${fmt(a.current_finish)}</span></td>
+      <td>${fmt(a.original_start)}</td><td>${a.duration_days==null?'—':`${a.duration_days}d`}</td><td>${fmt(a.original_finish)}</td>
+      <td><span class="${startChanged?'changed-date':''}">${fmt(a.current_start)}</span></td><td><span class="${finishChanged?'changed-date':''}">${fmt(a.current_finish)}</span></td>
       <td><span class="status">${esc(a.status)}</span></td><td>${a.percent_complete}%</td>
       <td>${canUpdateActivity()?`<button class="ghost edit-act" data-id="${a.id}">${isActivityAdmin()?'Edit':'Update'}</button>`:'<span class="muted small">View only</span>'}</td></tr>`;
   }).join('');
   document.querySelectorAll('.edit-act').forEach(b=>b.onclick=()=>openEdit(b.dataset.id));
+  renderStats(rows);
 }
-function renderStats(){
+function renderStats(rows=filteredActivities()){
   const today=isoDate(new Date());
-  const remaining=activities.filter(a=>a.status!=='Complete').length;
-  const delayed=activities.filter(a=>a.status==='Delayed' || (a.current_finish && a.current_finish<today && a.status!=='Complete')).length;
-  const changed=activities.filter(a=>a.original_start!==a.current_start || a.original_finish!==a.current_finish).length;
-  const progress=activities.filter(a=>a.status==='In Progress').length;
+  // Stats always reflect the activities currently visible under the active filters.
+  const remaining=rows.filter(a=>a.status!=='Complete').length;
+  const delayed=rows.filter(a=>a.status==='Delayed' || (a.current_finish && a.current_finish<today && a.status!=='Complete')).length;
+  const changed=rows.filter(a=>a.original_start!==a.current_start || a.original_finish!==a.current_finish).length;
+  const progress=rows.filter(a=>a.status==='In Progress').length;
   $('stats').innerHTML=[['Remaining',remaining],['In Progress',progress],['Delayed / Past Due',delayed],['Date Changes',changed]].map(([l,n])=>`<div class="stat"><div class="num">${n}</div><div class="label">${l}</div></div>`).join('');
 }
 
@@ -239,6 +248,21 @@ $('userForm')?.addEventListener('submit',async e=>{
   e.target.reset();toast('User created');await loadReferenceData();
 });
 async function toggleUser(id,active){const r=await fetch(`/api/admin/user/${id}/active`,{method:'PATCH',headers:{'Content-Type':'application/json','Authorization':`Bearer ${session.access_token}`},body:JSON.stringify({active})});const data=await r.json();if(!r.ok){toast(data.error||'Could not update user');return;}toast(active?'User activated':'User deactivated');await loadReferenceData();}
+
+async function deleteUser(id){
+  const u=profiles.find(p=>p.id===id);
+  if(!u) return;
+  const label=u.full_name||u.email||'this user';
+  if(!confirm(`Permanently delete ${label}?\n\nThis removes their login and user profile and cannot be undone.`)) return;
+  const r=await fetch(`/api/admin/user/${id}`,{
+    method:'DELETE',
+    headers:{'Authorization':`Bearer ${session.access_token}`}
+  });
+  const data=await r.json().catch(()=>({}));
+  if(!r.ok){toast(data.error||'Could not delete user');return;}
+  toast('User deleted');
+  await loadReferenceData();
+}
 
 function openPasswordModal(userId){
   if(!isAdmin()) return;

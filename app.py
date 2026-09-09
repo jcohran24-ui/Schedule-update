@@ -125,6 +125,52 @@ def create_user():
     return jsonify({'ok': True, 'user_id': new_uid})
 
 
+@app.route('/api/admin/user/<user_id>', methods=['DELETE'])
+def delete_user(user_id):
+    """Permanently delete a managed user. GC Admin only; cannot delete self or Activity Admin."""
+    if not SUPABASE_SERVICE_ROLE_KEY:
+        return jsonify({'error': 'Service role key is not configured'}), 500
+    acting_user, err = verify_gc_admin(request.headers.get('Authorization'))
+    if err:
+        return jsonify({'error': err[0]}), err[1]
+
+    acting_uid = (acting_user or {}).get('id')
+    if user_id == acting_uid:
+        return jsonify({'error': 'You cannot delete your own admin account'}), 400
+
+    headers = {
+        'apikey': SUPABASE_SERVICE_ROLE_KEY,
+        'Authorization': f'Bearer {SUPABASE_SERVICE_ROLE_KEY}',
+        'Content-Type': 'application/json',
+    }
+
+    # Protect the Activity Admin account from accidental deletion.
+    profile_resp = requests.get(
+        f'{SUPABASE_URL}/rest/v1/profiles',
+        params={'id': f'eq.{user_id}', 'select': 'id,email,full_name,is_activity_admin'},
+        headers=headers,
+        timeout=15,
+    )
+    rows = profile_resp.json() if profile_resp.ok else []
+    if rows and rows[0].get('is_activity_admin') is True:
+        return jsonify({'error': 'The Activity Admin account cannot be deleted'}), 400
+
+    resp = requests.delete(
+        f'{SUPABASE_URL}/auth/v1/admin/users/{user_id}',
+        headers=headers,
+        timeout=20,
+    )
+    if not resp.ok:
+        try:
+            detail = resp.json()
+        except Exception:
+            detail = resp.text
+        return jsonify({'error': 'Could not delete user', 'detail': detail}), resp.status_code
+
+    # profiles.id references auth.users(id) ON DELETE CASCADE, so the profile is removed automatically.
+    return jsonify({'ok': True})
+
+
 @app.route('/api/admin/user/<user_id>/active', methods=['PATCH'])
 def set_user_active(user_id):
     if not SUPABASE_SERVICE_ROLE_KEY:
