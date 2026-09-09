@@ -21,3 +21,5 @@
 .card-collapse-title{font-size:1.17em;font-weight:800}
 .card-collapse-count{margin-left:auto;color:#697386;font-size:12px;font-weight:700}
 .collapsible-card-body{padding-top:2px}
+
+.user-actions{white-space:nowrap}.user-actions button{margin:2px}

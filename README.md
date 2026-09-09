@@ -109,3 +109,7 @@ Permissions after the migration:
 - Subcontractors: can update only their own company's current dates, status, percent complete, and notes.
 
 The Admin page includes an **Activity Management** table visible only to the Activity Admin account.
+
+
+## Admin password management
+GC Admin users can set a replacement password for any user from Admin > User Management. Existing passwords are never displayed or retrievable. Password changes are performed server-side with the Supabase service role key.

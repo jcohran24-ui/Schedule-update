@@ -141,7 +141,7 @@
                 <select id="userCompany"><option value="">Select company</option></select>
                 <button class="primary">Create User</button>
               </form>
-              <div class="table-wrap inner"><table><thead><tr><th>Name</th><th>Email</th><th>Role</th><th>Company</th><th>Active</th><th></th></tr></thead><tbody id="userBody"></tbody></table></div>
+              <div class="table-wrap inner"><table><thead><tr><th>Name</th><th>Email</th><th>Role</th><th>Company</th><th>Active</th><th>Actions</th></tr></thead><tbody id="userBody"></tbody></table></div>
             </div>
           </div>
         </section>
@@ -159,6 +159,20 @@
         <div class="two-col"><label>Status<select id="editStatus"><option>Not Started</option><option>Starting Soon</option><option>In Progress</option><option>Complete</option><option>Delayed</option><option>On Hold</option></select></label><label>Percent Complete<input id="editPercent" type="number" min="0" max="100"></label></div>
         <label>Update / Delay Comment<textarea id="editNotes" rows="4" placeholder="What changed, why, or what is needed?"></textarea></label>
         <button class="primary">Save Update</button>
+      </form>
+    </div>
+  </div>
+
+
+  <div id="passwordModal" class="modal hidden">
+    <div class="modal-card">
+      <div class="modal-head"><div><h3>Set User Password</h3><p id="passwordUserLabel" class="muted"></p></div><button id="closePasswordModal" class="icon-btn">×</button></div>
+      <form id="passwordForm" class="stack">
+        <input id="passwordUserId" type="hidden">
+        <label>New Password<input id="newUserPassword" type="password" minlength="8" autocomplete="new-password" placeholder="At least 8 characters" required></label>
+        <label>Confirm New Password<input id="confirmUserPassword" type="password" minlength="8" autocomplete="new-password" placeholder="Enter it again" required></label>
+        <p class="muted small">Current passwords cannot be viewed. Saving here replaces the user's login password.</p>
+        <button class="primary" type="submit">Set Password</button>
       </form>
     </div>
   </div>

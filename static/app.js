@@ -96,8 +96,9 @@ function initCompaniesTradesCollapse(){
 }
 function renderUsers(){
   if(!isAdmin() || !$('userBody')) return;
-  $('userBody').innerHTML=profiles.map(p=>`<tr><td>${esc(p.full_name||'')}</td><td>${esc(p.email||'')}</td><td>${esc(p.role)}</td><td>${esc(companyName(p.company_id))}</td><td>${p.active?'Yes':'No'}</td><td><button class="ghost toggle-user" data-id="${p.id}" data-active="${p.active}">${p.active?'Deactivate':'Activate'}</button></td></tr>`).join('');
+  $('userBody').innerHTML=profiles.map(p=>`<tr><td>${esc(p.full_name||'')}</td><td>${esc(p.email||'')}</td><td>${esc(p.role)}</td><td>${esc(companyName(p.company_id))}</td><td>${p.active?'Yes':'No'}</td><td class="user-actions"><button class="ghost set-password" data-id="${p.id}">Set Password</button> <button class="ghost toggle-user" data-id="${p.id}" data-active="${p.active}">${p.active?'Deactivate':'Activate'}</button></td></tr>`).join('');
   document.querySelectorAll('.toggle-user').forEach(b=>b.onclick=()=>toggleUser(b.dataset.id,b.dataset.active!=='true'));
+  document.querySelectorAll('.set-password').forEach(b=>b.onclick=()=>openPasswordModal(b.dataset.id));
 }
 function updateProjectLabel(){ const p=projects.find(x=>x.id===selectedProjectId); $('projectLabel').textContent=p?.project_name||'No project selected'; $('scheduleSubtitle').textContent=profile?.role==='sub' ? companyName(profile.company_id) : 'Live subcontractor updates'; }
 
@@ -201,6 +202,32 @@ $('userForm')?.addEventListener('submit',async e=>{
   e.target.reset();toast('User created');await loadReferenceData();
 });
 async function toggleUser(id,active){const r=await fetch(`/api/admin/user/${id}/active`,{method:'PATCH',headers:{'Content-Type':'application/json','Authorization':`Bearer ${session.access_token}`},body:JSON.stringify({active})});const data=await r.json();if(!r.ok){toast(data.error||'Could not update user');return;}toast(active?'User activated':'User deactivated');await loadReferenceData();}
+
+function openPasswordModal(userId){
+  if(!isAdmin()) return;
+  const p=profiles.find(x=>x.id===userId); if(!p) return;
+  $('passwordUserId').value=userId;
+  $('passwordUserLabel').textContent=`${p.full_name||p.email} • ${p.email||''}`;
+  $('newUserPassword').value='';
+  $('confirmUserPassword').value='';
+  $('passwordModal').classList.remove('hidden');
+  setTimeout(()=>$('newUserPassword')?.focus(),50);
+}
+$('closePasswordModal')?.addEventListener('click',()=>$('passwordModal').classList.add('hidden'));
+$('passwordModal')?.addEventListener('click',e=>{if(e.target===$('passwordModal'))$('passwordModal').classList.add('hidden')});
+$('passwordForm')?.addEventListener('submit',async e=>{
+  e.preventDefault(); if(!isAdmin()) return;
+  const id=$('passwordUserId').value;
+  const password=$('newUserPassword').value;
+  const confirm=$('confirmUserPassword').value;
+  if(password.length<8){toast('Password must be at least 8 characters');return;}
+  if(password!==confirm){toast('Passwords do not match');return;}
+  const r=await fetch(`/api/admin/user/${id}/password`,{method:'PATCH',headers:{'Content-Type':'application/json','Authorization':`Bearer ${session.access_token}`},body:JSON.stringify({password})});
+  const data=await r.json();
+  if(!r.ok){toast(data.error||'Could not update password');return;}
+  $('passwordModal').classList.add('hidden');
+  toast('Password updated');
+});
 
 const collapsedAdminAreas = new Set();
 function adminAreaNames(){

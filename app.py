@@ -158,5 +158,38 @@ def set_user_active(user_id):
     return jsonify({'ok': True})
 
 
+@app.route('/api/admin/user/<user_id>/password', methods=['PATCH'])
+def set_user_password(user_id):
+    if not SUPABASE_SERVICE_ROLE_KEY:
+        return jsonify({'error': 'Service role key is not configured'}), 500
+    _, err = verify_gc_admin(request.headers.get('Authorization'))
+    if err:
+        return jsonify({'error': err[0]}), err[1]
+
+    data = request.get_json(silent=True) or {}
+    password = data.get('password') or ''
+    if len(password) < 8:
+        return jsonify({'error': 'Password must be at least 8 characters'}), 400
+
+    headers = {
+        'apikey': SUPABASE_SERVICE_ROLE_KEY,
+        'Authorization': f'Bearer {SUPABASE_SERVICE_ROLE_KEY}',
+        'Content-Type': 'application/json',
+    }
+    resp = requests.put(
+        f'{SUPABASE_URL}/auth/v1/admin/users/{user_id}',
+        headers=headers,
+        json={'password': password},
+        timeout=20,
+    )
+    if not resp.ok:
+        try:
+            detail = resp.json()
+        except Exception:
+            detail = resp.text
+        return jsonify({'error': 'Could not update password', 'detail': detail}), resp.status_code
+    return jsonify({'ok': True})
+
+
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=int(os.getenv('PORT', '10000')), debug=True)
