@@ -15,6 +15,19 @@ let currentRange = 'all';
 const $ = (id) => document.getElementById(id);
 const fmt = (d) => d ? new Date(d + 'T12:00:00').toLocaleDateString() : '—';
 const isoDate = (d) => d.toISOString().slice(0,10);
+function baselineWorkdays(start, finish){
+  if(!start || !finish) return null;
+  let s=new Date(start+'T12:00:00'), f=new Date(finish+'T12:00:00');
+  if(isNaN(s)||isNaN(f)||f<s) return null;
+  let n=0;
+  for(let d=new Date(s); d<=f; d.setDate(d.getDate()+1)){
+    const day=d.getDay(); if(day!==0 && day!==6) n++;
+  }
+  return n;
+}
+function baselineDuration(a){
+  return a.duration_days ?? baselineWorkdays(a.original_start,a.original_finish);
+}
 const esc = (s='') => String(s).replace(/[&<>'"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;',"'":'&#39;','"':'&quot;'}[c]));
 
 function toast(msg){ const el=$('toast'); el.textContent=msg; el.classList.remove('hidden'); setTimeout(()=>el.classList.add('hidden'),2600); }
@@ -182,7 +195,7 @@ function renderActivities(){
     return `<tr>
       <td class="gc-only ${!isGC()?'hidden':''}">${esc(companyName(a.company_id))}</td>
       <td><strong>${esc(a.activity_code)}</strong></td><td>${esc(a.area||'')}</td><td>${esc(a.activity_name)}</td>
-      <td>${fmt(a.original_start)}</td><td>${a.duration_days==null?'—':`${a.duration_days}d`}</td><td>${fmt(a.original_finish)}</td>
+      <td>${fmt(a.original_start)}</td><td>${baselineDuration(a)==null?'—':`${baselineDuration(a)}d`}</td><td>${fmt(a.original_finish)}</td>
       <td><span class="${startChanged?'changed-date':''}">${fmt(a.current_start)}</span></td><td><span class="${finishChanged?'changed-date':''}">${fmt(a.current_finish)}</span></td>
       <td><span class="status">${esc(a.status)}</span></td><td>${a.percent_complete}%</td>
       <td>${canUpdateActivity()?`<button class="ghost edit-act" data-id="${a.id}">${isActivityAdmin()?'Edit':'Update'}</button>`:'<span class="muted small">View only</span>'}</td></tr>`;
@@ -208,7 +221,7 @@ function openEdit(id){
   const a=activities.find(x=>x.id===id); if(!a)return;
   if(isActivityAdmin()){ openAdminActivity(a); return; }
   $('editId').value=a.id;$('editTitle').textContent=a.activity_name;$('editCode').textContent=`${a.activity_code} • ${a.area||'No area'}`;
-  $('baselineDates').textContent=`${fmt(a.original_start)} → ${fmt(a.original_finish)}`;$('editStart').value=a.current_start||'';$('editFinish').value=a.current_finish||'';$('editStatus').value=a.status;$('editPercent').value=a.percent_complete;$('editNotes').value=a.notes||'';
+  $('baselineDates').textContent=`${fmt(a.original_start)} • ${baselineDuration(a)==null?'—':baselineDuration(a)+'d'} • ${fmt(a.original_finish)}`;$('editStart').value=a.current_start||'';$('editFinish').value=a.current_finish||'';$('editStatus').value=a.status;$('editPercent').value=a.percent_complete;$('editNotes').value=a.notes||'';
   $('editModal').classList.remove('hidden');
 }
 $('closeModal')?.addEventListener('click',()=>$('editModal').classList.add('hidden'));
@@ -352,9 +365,9 @@ function openAdminActivity(a=null){
   populateAdminCompanySelect(a?.company_id||'');
   $('adminBaselineStart').value=a?.original_start||'';
   $('adminBaselineFinish').value=a?.original_finish||'';
-  $('adminCurrentStart').value=a?.current_start||a?.original_start||'';
-  $('adminCurrentFinish').value=a?.current_finish||a?.original_finish||'';
-  $('adminDuration').value=a?.duration_days??'';
+  $('adminCurrentStart').value=a?.current_start||'';
+  $('adminCurrentFinish').value=a?.current_finish||'';
+  $('adminDuration').value=a ? (baselineDuration(a)??'') : '';
   $('adminStatus').value=a?.status||'Not Started';
   $('adminPercent').value=a?.percent_complete??0;
   $('adminNotes').value=a?.notes||'';
@@ -425,10 +438,14 @@ $('uploadBtn')?.addEventListener('click',async()=>{
       if(!code||!name){skipped++;continue;}
       const companyLabel=pick(r,['trade_company','company_trade','company','subcontractor','trade','responsible_contractor']);
       const company_id=await ensureCompany(companyLabel);
-      const start=excelDate(pick(r,['start','start_date','baseline_start','current_start']));
-      const finish=excelDate(pick(r,['finish','finish_date','baseline_finish','current_finish']));
-      const durationRaw=pick(r,['duration','duration_days','remaining_duration']); const duration=durationRaw===null?null:parseInt(String(durationRaw),10)||null;
-      batch.push({project_id:selectedProjectId,company_id,activity_code:String(code).trim(),activity_name:String(name).trim(),area:String(pick(r,['area','location','building_area'])||'').trim()||null,original_start:start,original_finish:finish,current_start:start,current_finish:finish,duration_days:duration,status:'Not Started',percent_complete:0,source_upload:file.name});
+      const start=excelDate(pick(r,['baseline_start','original_start','start','start_date']));
+      const finish=excelDate(pick(r,['baseline_finish','original_finish','finish','finish_date']));
+      const currentStart=excelDate(pick(r,['current_start']));
+      const currentFinish=excelDate(pick(r,['current_finish']));
+      const durationRaw=pick(r,['baseline_duration','planned_duration','pd','duration_workdays','duration','duration_days','remaining_duration']);
+      let duration=durationRaw===null?null:(parseInt(String(durationRaw).replace(/[^0-9-]/g,''),10)||null);
+      if(duration===null) duration=baselineWorkdays(start,finish);
+      batch.push({project_id:selectedProjectId,company_id,activity_code:String(code).trim(),activity_name:String(name).trim(),area:String(pick(r,['area','location','building_area'])||'').trim()||null,original_start:start,original_finish:finish,current_start:currentStart,current_finish:currentFinish,duration_days:duration,status:'Not Started',percent_complete:0,source_upload:file.name});
     }
     for(let i=0;i<batch.length;i+=200){
       const part=batch.slice(i,i+200); const {error}=await sb.from('activities').upsert(part,{onConflict:'project_id,activity_code',ignoreDuplicates:true}); if(error)throw error; imported+=part.length;
