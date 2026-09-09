@@ -26,6 +26,7 @@ create table if not exists public.profiles (
   company_id uuid references public.companies(id) on delete set null,
   active boolean not null default true,
   is_activity_admin boolean not null default false,
+  must_change_password boolean not null default false,
   created_at timestamptz not null default now()
 );
 

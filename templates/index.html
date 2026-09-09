@@ -30,6 +30,19 @@
     </form>
   </section>
 
+  <section id="forcePasswordScreen" class="screen centered hidden">
+    <form id="forcePasswordForm" class="card narrow">
+      <div class="brand-mark">TS</div>
+      <h1>Change Your Password</h1>
+      <p class="muted">This is your first login. Create a new password before continuing to the schedule.</p>
+      <label>New Password<input id="forceNewPassword" type="password" minlength="8" autocomplete="new-password" placeholder="At least 8 characters" required></label>
+      <label>Confirm New Password<input id="forceConfirmPassword" type="password" minlength="8" autocomplete="new-password" placeholder="Enter it again" required></label>
+      <button class="primary" type="submit">Change Password & Continue</button>
+      <p id="forcePasswordError" class="error"></p>
+      <button id="forcePasswordLogout" class="ghost" type="button">Sign Out</button>
+    </form>
+  </section>
+
   <section id="appScreen" class="hidden">
     <header class="topbar">
       <div>

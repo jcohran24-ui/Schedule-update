@@ -115,6 +115,7 @@ def create_user():
             'role': role,
             'company_id': company_id,
             'active': True,
+            'must_change_password': True,
         },
         timeout=15,
     )
@@ -188,6 +189,43 @@ def set_user_password(user_id):
         except Exception:
             detail = resp.text
         return jsonify({'error': 'Could not update password', 'detail': detail}), resp.status_code
+    return jsonify({'ok': True})
+
+
+@app.route('/api/account/password-changed', methods=['POST'])
+def password_changed():
+    """Clear the first-login password-change requirement for the signed-in user."""
+    if not SUPABASE_SERVICE_ROLE_KEY:
+        return jsonify({'error': 'Service role key is not configured'}), 500
+    auth_header = request.headers.get('Authorization')
+    if not auth_header or not auth_header.lower().startswith('bearer '):
+        return jsonify({'error': 'Missing login token'}), 401
+    token = auth_header.split(' ', 1)[1].strip()
+    user_resp = requests.get(
+        f'{SUPABASE_URL}/auth/v1/user',
+        headers={'apikey': SUPABASE_ANON_KEY, 'Authorization': f'Bearer {token}'},
+        timeout=15,
+    )
+    if user_resp.status_code != 200:
+        return jsonify({'error': 'Invalid or expired login'}), 401
+    uid = (user_resp.json() or {}).get('id')
+    if not uid:
+        return jsonify({'error': 'Invalid user'}), 401
+    headers = {
+        'apikey': SUPABASE_SERVICE_ROLE_KEY,
+        'Authorization': f'Bearer {SUPABASE_SERVICE_ROLE_KEY}',
+        'Content-Type': 'application/json',
+        'Prefer': 'return=minimal',
+    }
+    resp = requests.patch(
+        f'{SUPABASE_URL}/rest/v1/profiles',
+        params={'id': f'eq.{uid}'},
+        headers=headers,
+        json={'must_change_password': False},
+        timeout=15,
+    )
+    if not resp.ok:
+        return jsonify({'error': 'Password changed, but account setup could not be finalized'}), 500
     return jsonify({'ok': True})
 
 

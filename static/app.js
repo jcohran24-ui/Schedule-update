@@ -40,12 +40,49 @@ $('loginForm')?.addEventListener('submit', async e=>{
 });
 $('logoutBtn')?.addEventListener('click', async()=>{await sb.auth.signOut(); location.reload();});
 
+$('forcePasswordLogout')?.addEventListener('click', async()=>{await sb.auth.signOut(); location.reload();});
+$('forcePasswordForm')?.addEventListener('submit', async e=>{
+  e.preventDefault();
+  const errEl=$('forcePasswordError');
+  errEl.textContent='';
+  const password=$('forceNewPassword').value;
+  const confirm=$('forceConfirmPassword').value;
+  if(password.length<8){errEl.textContent='Password must be at least 8 characters.';return;}
+  if(password!==confirm){errEl.textContent='Passwords do not match.';return;}
+  const {error}=await sb.auth.updateUser({password});
+  if(error){errEl.textContent=error.message;return;}
+  const {data:{session:latestSession}}=await sb.auth.getSession();
+  if(!latestSession){errEl.textContent='Your login expired. Please sign in again.';return;}
+  const r=await fetch('/api/account/password-changed',{
+    method:'POST',
+    headers:{'Content-Type':'application/json','Authorization':`Bearer ${latestSession.access_token}`},
+    body:'{}'
+  });
+  const data=await r.json().catch(()=>({}));
+  if(!r.ok){errEl.textContent=data.error||'Password changed, but setup could not be completed. Please contact an admin.';return;}
+  profile.must_change_password=false;
+  session=latestSession;
+  toast('Password changed');
+  await enterApp(latestSession);
+});
+
 async function enterApp(s){
   session=s;
   const {data:p,error}=await sb.from('profiles').select('*').eq('id',s.user.id).single();
   if(error || !p || !p.active){ await sb.auth.signOut(); $('loginError').textContent='Your account is not active or has not been assigned a profile.'; return; }
   profile=p;
-  $('loginScreen').classList.add('hidden'); $('appScreen').classList.remove('hidden');
+  $('loginScreen').classList.add('hidden');
+  if(p.must_change_password){
+    $('appScreen').classList.add('hidden');
+    $('forcePasswordScreen').classList.remove('hidden');
+    $('forcePasswordError').textContent='';
+    $('forceNewPassword').value='';
+    $('forceConfirmPassword').value='';
+    setTimeout(()=>$('forceNewPassword')?.focus(),50);
+    return;
+  }
+  $('forcePasswordScreen').classList.add('hidden');
+  $('appScreen').classList.remove('hidden');
   $('userBadge').textContent=`${p.full_name || p.email} • ${p.role==='sub'?'Subcontractor':p.role==='gc_admin'?'GC Admin':'GC'}${p.is_activity_admin?' • Activity Editor':''}`;
   document.querySelectorAll('.gc-only').forEach(el=>el.classList.toggle('hidden',!isGC()));
   document.querySelectorAll('.admin-only').forEach(el=>el.classList.toggle('hidden',!(isAdmin() || isActivityAdmin())));

@@ -113,3 +113,8 @@ The Admin page includes an **Activity Management** table visible only to the Act
 
 ## Admin password management
 GC Admin users can set a replacement password for any user from Admin > User Management. Existing passwords are never displayed or retrievable. Password changes are performed server-side with the Supabase service role key.
+
+
+## First-login password change
+
+Run `first_login_password_migration.sql` once in Supabase before deploying this version. New users created from Admin are marked `must_change_password = true`. Their first successful login is restricted to the Change Password screen. After they choose a new 8+ character password, the app clears the flag and opens the schedule. Existing users are not forced to change passwords.
