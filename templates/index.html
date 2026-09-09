@@ -2,8 +2,15 @@
 <html lang="en">
 <head>
   <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <title>Trade Schedule</title>
+  <meta name="theme-color" content="#182a3f">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="default">
+  <meta name="apple-mobile-web-app-title" content="Trade Schedule">
+  <link rel="manifest" href="/static/manifest.webmanifest">
+  <link rel="apple-touch-icon" href="/static/icons/apple-touch-icon.png">
   <link rel="preconnect" href="https://cdn.jsdelivr.net">
   <link rel="stylesheet" href="/static/styles.css">
 </head>
@@ -26,6 +33,7 @@
       <label>Email<input id="loginEmail" type="email" autocomplete="username" required></label>
       <label>Password<input id="loginPassword" type="password" autocomplete="current-password" required></label>
       <button class="primary" type="submit">Sign In</button>
+      <button class="ghost install-app-btn hidden" type="button">Install App</button>
       <p id="loginError" class="error"></p>
     </form>
   </section>
@@ -51,6 +59,7 @@
       </div>
       <div class="top-actions">
         <span id="userBadge" class="badge"></span>
+        <button class="ghost install-app-btn hidden" type="button">Install App</button>
         <button id="logoutBtn" class="ghost">Sign Out</button>
       </div>
     </header>
@@ -143,6 +152,12 @@
             <div class="card span-2 activity-admin-only">
               <div class="page-head compact"><div><h3>Activity Management</h3><p class="muted small">Only your Activity Admin account can add, edit, reassign, or delete schedule activities.</p></div><div class="activity-admin-actions"><button id="collapseAllAreasBtn" class="ghost" type="button">Collapse All</button><button id="expandAllAreasBtn" class="ghost" type="button">Expand All</button><button id="addActivityBtn" class="primary" type="button">Add Activity</button></div></div>
               <div class="table-wrap inner"><table><thead><tr><th>Activity ID</th><th>Activity</th><th>Trade</th><th>Area</th><th>Baseline Start</th><th>Baseline Finish</th><th></th></tr></thead><tbody id="adminActivityBody"></tbody></table></div>
+            </div>
+            <div class="card span-2 gc-admin-only">
+              <h3>Foreman Update Email</h3>
+              <p class="muted small">Email all active subcontractor users and ask them to review the 4-Week Look Ahead, update started/completed activities, and report incorrect trade assignments.</p>
+              <button id="emailForemenBtn" class="primary" type="button">Email Active Foremen</button>
+              <p id="emailForemenStatus" class="muted small"></p>
             </div>
             <div class="card span-2 gc-admin-only">
               <h3>User Management</h3>

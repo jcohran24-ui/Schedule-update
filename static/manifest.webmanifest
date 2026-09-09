@@ -1,0 +1,16 @@
+{
+  "name": "CTCC Oasis Trade Schedule",
+  "short_name": "Trade Schedule",
+  "description": "CTCC Oasis subcontractor schedule coordination and 4-week look ahead updates.",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "orientation": "any",
+  "background_color": "#f5f7fa",
+  "theme_color": "#182a3f",
+  "icons": [
+    {"src": "/static/icons/icon-192.png", "sizes": "192x192", "type": "image/png"},
+    {"src": "/static/icons/icon-512.png", "sizes": "512x512", "type": "image/png"},
+    {"src": "/static/icons/maskable-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable"}
+  ]
+}

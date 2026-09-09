@@ -23,3 +23,33 @@
 .collapsible-card-body{padding-top:2px}
 
 .user-actions{white-space:nowrap}.user-actions button{margin:2px}
+
+/* V18 mobile/PWA additions */
+@supports (padding: max(0px)) {
+  body { padding-left: env(safe-area-inset-left); padding-right: env(safe-area-inset-right); }
+  .topbar { padding-top: max(12px, env(safe-area-inset-top)); }
+}
+
+@media (max-width: 760px) {
+  .topbar { align-items: flex-start; gap: 10px; }
+  .top-actions { flex-wrap: wrap; justify-content: flex-end; }
+  .app-shell { display: block; }
+  .sidebar {
+    position: sticky;
+    top: 0;
+    z-index: 20;
+    display: flex;
+    gap: 6px;
+    width: 100%;
+    overflow-x: auto;
+    padding: 8px;
+  }
+  .sidebar .nav-btn { flex: 0 0 auto; min-height: 44px; }
+  .content { padding: 12px; }
+  .toolbar { gap: 8px; }
+  .segmented { overflow-x: auto; flex-wrap: nowrap; }
+  .segmented button { min-height: 44px; flex: 0 0 auto; }
+  input, select, button { min-height: 44px; }
+  .table-wrap { overflow-x: auto; -webkit-overflow-scrolling: touch; }
+  table { min-width: 980px; }
+}

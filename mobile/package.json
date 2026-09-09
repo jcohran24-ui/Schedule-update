@@ -1,0 +1,18 @@
+{
+  "name": "ctcc-oasis-trade-schedule-mobile",
+  "version": "1.0.0",
+  "private": true,
+  "scripts": {
+    "android": "npx cap open android",
+    "ios": "npx cap open ios",
+    "sync": "npx cap sync"
+  },
+  "dependencies": {
+    "@capacitor/core": "latest"
+  },
+  "devDependencies": {
+    "@capacitor/android": "latest",
+    "@capacitor/cli": "latest",
+    "@capacitor/ios": "latest"
+  }
+}

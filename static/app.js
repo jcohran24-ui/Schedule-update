@@ -405,6 +405,36 @@ async function loadHistory(){
 $('projectForm')?.addEventListener('submit',async e=>{e.preventDefault();const name=$('newProjectName').value.trim();if(!name)return;const {error}=await sb.from('projects').insert({project_name:name});if(error){toast(error.message);return;}$('newProjectName').value='';toast('Project added');await loadReferenceData();});
 $('companyForm')?.addEventListener('submit',async e=>{e.preventDefault();const company_name=$('newCompanyName').value.trim();const trade=$('newTradeName').value.trim()||null;if(!company_name)return;const {error}=await sb.from('companies').insert({company_name,trade});if(error){toast(error.message);return;}$('newCompanyName').value='';$('newTradeName').value='';toast('Company added');await loadReferenceData();});
 
+$('emailForemenBtn')?.addEventListener('click', async ()=>{
+  if(!isAdmin()) return;
+  const recipients=profiles.filter(p=>p.role==='sub' && p.active && p.email);
+  if(!recipients.length){toast('No active subcontractor users with email addresses');return;}
+  const names=recipients.map(p=>`${p.full_name||p.email} (${companyName(p.company_id)})`).join('\n');
+  if(!confirm(`Send the 4-Week Look Ahead update request to ${recipients.length} active subcontractor user${recipients.length===1?'':'s'}?\n\n${names}`)) return;
+
+  const btn=$('emailForemenBtn'), status=$('emailForemenStatus');
+  if(btn){btn.disabled=true;btn.textContent='Sending…';}
+  if(status) status.textContent='Sending update request…';
+  try{
+    const r=await fetch('/api/admin/email-foremen',{
+      method:'POST',
+      headers:{'Content-Type':'application/json','Authorization':`Bearer ${session.access_token}`},
+      body:'{}'
+    });
+    const data=await r.json().catch(()=>({}));
+    if(!r.ok){
+      toast(data.error||'Could not send email');
+      if(status) status.textContent=data.error||'Could not send email.';
+      return;
+    }
+    const msg=`Sent to ${data.sent_count} foremen${data.failed_count?`; ${data.failed_count} failed`:''}.`;
+    toast(msg);
+    if(status) status.textContent=msg;
+  }finally{
+    if(btn){btn.disabled=false;btn.textContent='Email Active Foremen';}
+  }
+});
+
 $('userRole')?.addEventListener('change',e=>{$('userCompany').disabled=e.target.value!=='sub'; if(e.target.value!=='sub')$('userCompany').value='';});
 $('userForm')?.addEventListener('submit',async e=>{
   e.preventDefault();
@@ -615,3 +645,46 @@ $('uploadBtn')?.addEventListener('click',async()=>{
 });
 
 init();
+
+// V18: installable app / PWA support for Android and iPhone.
+let deferredInstallPrompt = null;
+function isStandaloneApp(){
+  return window.matchMedia('(display-mode: standalone)').matches || window.navigator.standalone === true;
+}
+function isIOSDevice(){
+  return /iphone|ipad|ipod/i.test(window.navigator.userAgent);
+}
+function refreshInstallButtons(){
+  const show = !isStandaloneApp() && (deferredInstallPrompt || isIOSDevice());
+  document.querySelectorAll('.install-app-btn').forEach(btn => btn.classList.toggle('hidden', !show));
+}
+window.addEventListener('beforeinstallprompt', e => {
+  e.preventDefault();
+  deferredInstallPrompt = e;
+  refreshInstallButtons();
+});
+window.addEventListener('appinstalled', () => {
+  deferredInstallPrompt = null;
+  refreshInstallButtons();
+  try{ toast('Trade Schedule installed'); }catch(_e){}
+});
+document.addEventListener('click', async e => {
+  const btn=e.target.closest('.install-app-btn');
+  if(!btn) return;
+  if(deferredInstallPrompt){
+    deferredInstallPrompt.prompt();
+    await deferredInstallPrompt.userChoice.catch(()=>null);
+    deferredInstallPrompt=null;
+    refreshInstallButtons();
+    return;
+  }
+  if(isIOSDevice()){
+    alert('To install on iPhone/iPad: open this page in Safari, tap the Share button, then choose “Add to Home Screen” and tap Add.');
+    return;
+  }
+  alert('Open your browser menu and choose “Install app” or “Add to Home screen.”');
+});
+if('serviceWorker' in navigator){
+  window.addEventListener('load', ()=>navigator.serviceWorker.register('/sw.js',{scope:'/'}).catch(err=>console.warn('Service worker registration failed',err)));
+}
+refreshInstallButtons();

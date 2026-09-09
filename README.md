@@ -148,3 +148,25 @@ This does not remove the Current Start/Finish fields from the app. Users can ent
 
 ## V16 look-ahead overdue activities
 The 4-week and 6-week look-aheads now also include Not Started activities whose effective scheduled start date is before the current look-ahead date. Effective dates use Current Start/Finish when present and fall back to Baseline Start/Finish when current dates are blank. Results remain chronological, so overdue work appears before upcoming work.
+
+## Foreman 4-Week Update Email
+V17 adds **Admin → Email Active Foremen**. It sends each active subcontractor user an individual email asking them to review the 4-Week Look Ahead, update started/completed work, update current dates, and report activities assigned to the wrong company.
+
+Configure these Render environment variables before using the button: `SMTP_HOST`, `SMTP_PORT`, `SMTP_USERNAME`, `SMTP_PASSWORD`, `SMTP_FROM_EMAIL`, `SMTP_FROM_NAME`, and `APP_PUBLIC_URL`.
+
+For Gmail, use `smtp.gmail.com`, port `587`, your Gmail address for the username/from address, and a Google App Password for `SMTP_PASSWORD`.
+
+
+## V18 — Installable Android & iPhone App
+V18 is a Progressive Web App (PWA). No database migration is required.
+
+### Android
+Open the deployed app in Chrome. Use the new **Install App** button when shown, or Chrome menu → **Install app / Add to Home screen**.
+
+### iPhone / iPad
+Open the deployed app in **Safari**, tap **Share**, choose **Add to Home Screen**, then tap **Add**. V18 also shows an **Install App** button that displays these instructions on iOS.
+
+The installed app launches full-screen from the home screen with its own Trade Schedule icon. Live schedule data still comes from Supabase, so an internet connection is required for current activity data and updates.
+
+### Optional App Store / Play Store wrapper
+The `mobile/` folder contains a Capacitor starter configuration for a future native wrapper. Replace the placeholder Render URL before using it.
