@@ -53,3 +53,51 @@
   .table-wrap { overflow-x: auto; -webkit-overflow-scrolling: touch; }
   table { min-width: 980px; }
 }
+
+/* V19 mobile modal scrolling fix */
+.modal {
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+}
+.modal-card {
+  max-height: calc(100dvh - 40px);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  -webkit-overflow-scrolling: touch;
+}
+
+@media (max-width: 760px) {
+  .modal {
+    display: flex;
+    align-items: flex-start;
+    justify-content: center;
+    padding: max(10px, env(safe-area-inset-top)) 10px max(10px, env(safe-area-inset-bottom));
+  }
+  .modal-card {
+    width: 100%;
+    max-height: calc(100dvh - max(20px, env(safe-area-inset-top)) - max(20px, env(safe-area-inset-bottom)));
+    border-radius: 12px;
+    padding: 16px;
+  }
+  .modal-head {
+    position: sticky;
+    top: -16px;
+    z-index: 5;
+    background: #fff;
+    padding-top: 16px;
+    padding-bottom: 8px;
+  }
+  #editForm > .primary,
+  #adminActivityForm > .primary,
+  #passwordForm > .primary {
+    position: sticky;
+    bottom: -16px;
+    z-index: 5;
+    width: 100%;
+    margin-top: 4px;
+    padding-top: 13px;
+    padding-bottom: 13px;
+    box-shadow: 0 -8px 16px rgba(255,255,255,.92);
+  }
+  textarea { min-height: 110px; }
+}
