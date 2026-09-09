@@ -74,6 +74,25 @@ function renderCompanies(){
   if($('tradeFilter')) $('tradeFilter').innerHTML='<option value="">All Trades</option>'+companies.map(c=>`<option value="${c.id}">${esc(c.company_name)}</option>`).join('');
   if($('userCompany')) $('userCompany').innerHTML='<option value="">Select company</option>'+companies.map(c=>`<option value="${c.id}">${esc(c.company_name)}</option>`).join('');
   if($('companyList')) $('companyList').innerHTML=companies.map(c=>`<div class="mini-row"><span>${esc(c.company_name)}</span><span>${esc(c.trade||'')}</span></div>`).join('');
+  if($('companiesTradesCount')) $('companiesTradesCount').textContent=`${companies.length} ${companies.length===1?'company':'companies'}`;
+}
+
+function setCompaniesTradesCollapsed(collapsed){
+  const body=$('companiesTradesBody'), toggle=$('companiesTradesToggle');
+  if(!body || !toggle) return;
+  body.classList.toggle('hidden',collapsed);
+  toggle.setAttribute('aria-expanded',String(!collapsed));
+  const arrow=toggle.querySelector('.card-collapse-arrow');
+  if(arrow) arrow.textContent=collapsed?'▶':'▼';
+  try{localStorage.setItem('adminCompaniesTradesCollapsed',collapsed?'1':'0');}catch(e){}
+}
+function initCompaniesTradesCollapse(){
+  const toggle=$('companiesTradesToggle');
+  if(!toggle) return;
+  let collapsed=false;
+  try{collapsed=localStorage.getItem('adminCompaniesTradesCollapsed')==='1';}catch(e){}
+  setCompaniesTradesCollapsed(collapsed);
+  toggle.onclick=()=>setCompaniesTradesCollapsed(toggle.getAttribute('aria-expanded')==='true');
 }
 function renderUsers(){
   if(!isAdmin() || !$('userBody')) return;
@@ -229,6 +248,7 @@ function renderAdminActivities(){
 }
 $('collapseAllAreasBtn')?.addEventListener('click',collapseAllAdminAreas);
 $('expandAllAreasBtn')?.addEventListener('click',expandAllAdminAreas);
+initCompaniesTradesCollapse();
 function populateAdminCompanySelect(selected=''){
   if(!$('adminActivityCompany')) return;
   $('adminActivityCompany').innerHTML='<option value="">Unassigned / GC</option>'+companies.map(c=>`<option value="${c.id}">${esc(c.company_name)}</option>`).join('');

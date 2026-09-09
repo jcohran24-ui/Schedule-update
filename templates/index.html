@@ -110,10 +110,16 @@
               <form id="projectForm" class="stack"><input id="newProjectName" placeholder="Project name" required><button class="primary">Add Project</button></form>
               <div id="projectList" class="mini-list"></div>
             </div>
-            <div class="card gc-admin-only">
-              <h3>Companies / Trades</h3>
-              <form id="companyForm" class="stack"><input id="newCompanyName" placeholder="Company name" required><input id="newTradeName" placeholder="Trade (optional)"><button class="primary">Add Company</button></form>
-              <div id="companyList" class="mini-list"></div>
+            <div class="card gc-admin-only collapsible-card" id="companiesTradesCard">
+              <button id="companiesTradesToggle" class="card-collapse-toggle" type="button" aria-expanded="true" aria-controls="companiesTradesBody">
+                <span class="card-collapse-arrow">▼</span>
+                <span class="card-collapse-title">Companies / Trades</span>
+                <span id="companiesTradesCount" class="card-collapse-count">0 companies</span>
+              </button>
+              <div id="companiesTradesBody" class="collapsible-card-body">
+                <form id="companyForm" class="stack"><input id="newCompanyName" placeholder="Company name" required><input id="newTradeName" placeholder="Trade (optional)"><button class="primary">Add Company</button></form>
+                <div id="companyList" class="mini-list"></div>
+              </div>
             </div>
             <div class="card span-2 activity-admin-only">
               <h3>Upload Remaining Schedule</h3>
