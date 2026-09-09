@@ -283,16 +283,36 @@ async function loadActivities(){
   activities=data||[]; renderActivities(); renderAdminActivities();
 }
 
+function effectiveScheduleStart(a){ return a.current_start || a.original_start || null; }
+function effectiveScheduleFinish(a){ return a.current_finish || a.original_finish || effectiveScheduleStart(a); }
+function scheduleDateValue(v){ return v ? new Date(v+'T12:00:00').getTime() : Number.POSITIVE_INFINITY; }
+function chronologicalSort(a,b){
+  const s=scheduleDateValue(effectiveScheduleStart(a))-scheduleDateValue(effectiveScheduleStart(b));
+  if(s!==0) return s;
+  const f=scheduleDateValue(effectiveScheduleFinish(a))-scheduleDateValue(effectiveScheduleFinish(b));
+  if(f!==0) return f;
+  return String(a.activity_code||'').localeCompare(String(b.activity_code||''),undefined,{numeric:true,sensitivity:'base'});
+}
 function filteredActivities(){
   const q=($('searchInput').value||'').toLowerCase(); const trade=$('tradeFilter')?.value||''; const status=$('statusFilter').value;
   const today=new Date(); today.setHours(0,0,0,0); let horizon=null;
   if(['4','6'].includes(currentRange)){ horizon=new Date(today); horizon.setDate(horizon.getDate()+(Number(currentRange)*7)); }
-  return activities.filter(a=>{
+  const rows=activities.filter(a=>{
     if(currentRange==='all' && a.status==='Complete') return false;
     if(currentRange==='changed' && a.original_start===a.current_start && a.original_finish===a.current_finish) return false;
     if(horizon){
-      const s=a.current_start?new Date(a.current_start+'T12:00:00'):null; const f=a.current_finish?new Date(a.current_finish+'T12:00:00'):s;
-      if(!s || !f || s>horizon || f<today) return false;
+      // Use live/current dates when entered; otherwise fall back to the baseline schedule dates.
+      const startValue=effectiveScheduleStart(a), finishValue=effectiveScheduleFinish(a);
+      const s=startValue?new Date(startValue+'T12:00:00'):null;
+      const f=finishValue?new Date(finishValue+'T12:00:00'):s;
+      if(!s || !f) return false;
+
+      // Keep overdue activities visible in both look-aheads when they have not started.
+      // This lets the team see missed work whose effective scheduled start is before today,
+      // even though it falls outside the normal forward-looking window.
+      const overdueNotStarted = a.status === 'Not Started' && s < today;
+      const inLookaheadWindow = s <= horizon && f >= today;
+      if(!overdueNotStarted && !inLookaheadWindow) return false;
     }
     if(trade && a.company_id!==trade) return false;
     if(status && a.status!==status) return false;
@@ -300,6 +320,10 @@ function filteredActivities(){
     if(q && !hay.includes(q)) return false;
     return true;
   });
+  // Look-aheads are always displayed in chronological order using current dates first,
+  // with baseline dates as the fallback when current dates are blank.
+  if(['4','6'].includes(currentRange)) rows.sort(chronologicalSort);
+  return rows;
 }
 function renderActivities(){
   const rows=filteredActivities(); $('emptyState').classList.toggle('hidden',rows.length>0);

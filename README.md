@@ -133,3 +133,18 @@ Run `auto_progress_migration.sql` once in Supabase SQL Editor before deploying t
 - Enter only Current Finish to calculate Current Start backwards from duration.
 - Calculations skip Saturdays and Sundays and treat start/finish as inclusive workdays.
 - If both dates are already entered, entering/changing Finish does not overwrite Start.
+
+## V14 - Clear Current Dates
+
+To clear all existing Current Start and Current Finish values while preserving baseline/original dates, run `reset_current_dates.sql` once in the Supabase SQL Editor.
+
+This does not remove the Current Start/Finish fields from the app. Users can enter new current dates afterward, and the two-way workday date calculation remains enabled.
+
+## V15 - Chronological look-aheads
+- 4-week and 6-week look-aheads are sorted chronologically.
+- Current Start/Finish are used when present.
+- If Current Start or Finish is blank, the matching baseline/original date is used for filtering and sorting.
+
+
+## V16 look-ahead overdue activities
+The 4-week and 6-week look-aheads now also include Not Started activities whose effective scheduled start date is before the current look-ahead date. Effective dates use Current Start/Finish when present and fall back to Baseline Start/Finish when current dates are blank. Results remain chronological, so overdue work appears before upcoming work.
