@@ -47,6 +47,7 @@ create table if not exists public.activities (
   duration_days integer,
   status text not null default 'Not Started' check (status in ('Not Started','Starting Soon','In Progress','Complete','Delayed','On Hold')),
   percent_complete integer not null default 0 check (percent_complete between 0 and 100),
+  auto_percent boolean not null default true,
   notes text,
   source_upload text,
   updated_at timestamptz not null default now(),

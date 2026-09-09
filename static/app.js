@@ -44,6 +44,64 @@ function finishFromStartAndDuration(start, duration){
   }
   return isoDate(d);
 }
+function elapsedWorkdays(start, endDate=new Date()){
+  if(!start) return 0;
+  let s=new Date(start+'T12:00:00');
+  let e=endDate instanceof Date ? new Date(endDate) : new Date(String(endDate)+'T12:00:00');
+  e.setHours(12,0,0,0);
+  if(isNaN(s)||isNaN(e)||e<s) return 0;
+  let n=0;
+  for(let d=new Date(s); d<=e; d.setDate(d.getDate()+1)){
+    const day=d.getDay(); if(day!==0 && day!==6) n++;
+  }
+  return n;
+}
+function effectivePercent(a){
+  if(!a) return 0;
+  if(a.status==='Complete') return 100;
+  if(a.status==='Not Started' && !a.current_start) return 0;
+  if(a.auto_percent!==false && a.status==='In Progress' && a.current_start){
+    const duration=baselineDuration(a);
+    if(duration && Number(duration)>0){
+      const elapsed=elapsedWorkdays(a.current_start);
+      if(elapsed<=0) return 0;
+      return Math.min(99, Math.max(1, Math.round((elapsed/Number(duration))*100)));
+    }
+  }
+  return Number(a.percent_complete||0);
+}
+function effectivePercentFromForm({status,start,duration,stored=0,auto=true}){
+  if(status==='Complete') return 100;
+  if(status==='Not Started' && !start) return 0;
+  if(auto && status==='In Progress' && start && Number(duration)>0){
+    const elapsed=elapsedWorkdays(start);
+    if(elapsed<=0) return 0;
+    return Math.min(99, Math.max(1, Math.round((elapsed/Number(duration))*100)));
+  }
+  return Number(stored||0);
+}
+function refreshEditAutoPercent(){
+  const id=$('editId')?.value;
+  const a=activities.find(x=>x.id===id);
+  if(!a) return;
+  const status=$('editStatus').value;
+  const auto=status==='In Progress';
+  const pct=effectivePercentFromForm({status,start:$('editStart').value,duration:baselineDuration(a),stored:$('editPercent').value,auto});
+  $('editPercent').value=pct;
+  $('editPercent').disabled=auto || status==='Complete';
+  const note=$('editPercentAutoNote'); if(note) note.textContent=auto?'Auto based on elapsed workdays':'Manual';
+}
+function refreshAdminAutoPercent(){
+  const status=$('adminStatus')?.value;
+  const auto=$('adminAutoPercent')?.checked!==false;
+  const duration=$('adminDuration')?.value;
+  const pct=effectivePercentFromForm({status,start:$('adminCurrentStart')?.value,duration,stored:$('adminPercent')?.value,auto});
+  if($('adminPercent')){
+    $('adminPercent').value=pct;
+    $('adminPercent').disabled=(auto && status==='In Progress') || status==='Complete';
+  }
+  const note=$('adminPercentAutoNote'); if(note) note.textContent=(auto && status==='In Progress')?'Auto based on elapsed workdays':'Manual';
+}
 function autoFillEditFinish(){
   const id=$('editId')?.value;
   const a=activities.find(x=>x.id===id);
@@ -224,7 +282,7 @@ function renderActivities(){
       <td><strong>${esc(a.activity_code)}</strong></td><td>${esc(a.area||'')}</td><td>${esc(a.activity_name)}</td>
       <td>${fmt(a.original_start)}</td><td>${baselineDuration(a)==null?'—':`${baselineDuration(a)}d`}</td><td>${fmt(a.original_finish)}</td>
       <td><span class="${startChanged?'changed-date':''}">${fmt(a.current_start)}</span></td><td><span class="${finishChanged?'changed-date':''}">${fmt(a.current_finish)}</span></td>
-      <td><span class="status">${esc(a.status)}</span></td><td>${a.percent_complete}%</td>
+      <td><span class="status">${esc(a.status)}</span></td><td>${effectivePercent(a)}%</td>
       <td>${canUpdateActivity()?`<button class="ghost edit-act" data-id="${a.id}">${isActivityAdmin()?'Edit':'Update'}</button>`:'<span class="muted small">View only</span>'}</td></tr>`;
   }).join('');
   document.querySelectorAll('.edit-act').forEach(b=>b.onclick=()=>openEdit(b.dataset.id));
@@ -243,16 +301,19 @@ function renderStats(rows=filteredActivities()){
 ['searchInput','tradeFilter','statusFilter'].forEach(id=>$(id)?.addEventListener(id==='searchInput'?'input':'change',renderActivities));
 document.querySelectorAll('.range-btn').forEach(b=>b.addEventListener('click',()=>{document.querySelectorAll('.range-btn').forEach(x=>x.classList.remove('active'));b.classList.add('active');currentRange=b.dataset.range;renderActivities();}));
 
-$('editStart')?.addEventListener('change', autoFillEditFinish);
-$('adminCurrentStart')?.addEventListener('change', autoFillAdminFinish);
-$('adminDuration')?.addEventListener('change', ()=>{ if($('adminCurrentStart')?.value) autoFillAdminFinish(); });
+$('editStart')?.addEventListener('change', ()=>{ autoFillEditFinish(); refreshEditAutoPercent(); });
+$('editStatus')?.addEventListener('change', refreshEditAutoPercent);
+$('adminCurrentStart')?.addEventListener('change', ()=>{ autoFillAdminFinish(); refreshAdminAutoPercent(); });
+$('adminDuration')?.addEventListener('change', ()=>{ if($('adminCurrentStart')?.value) autoFillAdminFinish(); refreshAdminAutoPercent(); });
+$('adminStatus')?.addEventListener('change', refreshAdminAutoPercent);
+$('adminAutoPercent')?.addEventListener('change', refreshAdminAutoPercent);
 
 function openEdit(id){
   if(!canUpdateActivity()) return;
   const a=activities.find(x=>x.id===id); if(!a)return;
   if(isActivityAdmin()){ openAdminActivity(a); return; }
   $('editId').value=a.id;$('editTitle').textContent=a.activity_name;$('editCode').textContent=`${a.activity_code} • ${a.area||'No area'}`;
-  $('baselineDates').textContent=`${fmt(a.original_start)} • ${baselineDuration(a)==null?'—':baselineDuration(a)+'d'} • ${fmt(a.original_finish)}`;$('editStart').value=a.current_start||'';$('editFinish').value=a.current_finish||'';$('editStatus').value=a.status;$('editPercent').value=a.percent_complete;$('editNotes').value=a.notes||'';
+  $('baselineDates').textContent=`${fmt(a.original_start)} • ${baselineDuration(a)==null?'—':baselineDuration(a)+'d'} • ${fmt(a.original_finish)}`;$('editStart').value=a.current_start||'';$('editFinish').value=a.current_finish||'';$('editStatus').value=a.status;$('editPercent').value=effectivePercent(a);$('editNotes').value=a.notes||'';refreshEditAutoPercent();
   if($('editStart').value && !$('editFinish').value) autoFillEditFinish();
   $('editModal').classList.remove('hidden');
 }
@@ -260,7 +321,7 @@ $('closeModal')?.addEventListener('click',()=>$('editModal').classList.add('hidd
 $('editModal')?.addEventListener('click',e=>{if(e.target===$('editModal'))$('editModal').classList.add('hidden')});
 $('editForm')?.addEventListener('submit',async e=>{
   e.preventDefault(); const id=$('editId').value;
-  const patch={current_start:$('editStart').value||null,current_finish:$('editFinish').value||null,status:$('editStatus').value,percent_complete:Number($('editPercent').value||0),notes:$('editNotes').value.trim()||null};
+  const patch={current_start:$('editStart').value||null,current_finish:$('editFinish').value||null,status:$('editStatus').value,percent_complete:effectivePercentFromForm({status:$('editStatus').value,start:$('editStart').value,duration:baselineDuration(activities.find(x=>x.id===$('editId').value)),stored:$('editPercent').value,auto:$('editStatus').value==='In Progress'}),notes:$('editNotes').value.trim()||null};
   if(patch.current_start && patch.current_finish && patch.current_finish<patch.current_start){toast('Finish date cannot be before start date');return;}
   const {error}=await sb.from('activities').update(patch).eq('id',id); if(error){toast(error.message);return;}
   $('editModal').classList.add('hidden');toast('Activity updated');await loadActivities();
@@ -401,9 +462,11 @@ function openAdminActivity(a=null){
   $('adminCurrentFinish').value=a?.current_finish||'';
   $('adminDuration').value=a ? (baselineDuration(a)??'') : '';
   $('adminStatus').value=a?.status||'Not Started';
-  $('adminPercent').value=a?.percent_complete??0;
+  $('adminAutoPercent').checked=a?.auto_percent!==false;
+  $('adminPercent').value=a ? effectivePercent(a) : 0;
   $('adminNotes').value=a?.notes||'';
   if($('adminCurrentStart').value && !$('adminCurrentFinish').value) autoFillAdminFinish();
+  refreshAdminAutoPercent();
   $('adminActivityModal').classList.remove('hidden');
 }
 $('addActivityBtn')?.addEventListener('click',()=>openAdminActivity());
@@ -425,7 +488,8 @@ $('adminActivityForm')?.addEventListener('submit',async e=>{
     current_finish:$('adminCurrentFinish').value||null,
     duration_days:$('adminDuration').value===''?null:Number($('adminDuration').value),
     status:$('adminStatus').value,
-    percent_complete:Number($('adminPercent').value||0),
+    auto_percent:$('adminAutoPercent').checked,
+    percent_complete:effectivePercentFromForm({status:$('adminStatus').value,start:$('adminCurrentStart').value,duration:$('adminDuration').value,stored:$('adminPercent').value,auto:$('adminAutoPercent').checked}),
     notes:$('adminNotes').value.trim()||null,
   };
   if(!payload.activity_code||!payload.activity_name){toast('Activity ID and Activity Name are required');return;}
@@ -478,7 +542,7 @@ $('uploadBtn')?.addEventListener('click',async()=>{
       const durationRaw=pick(r,['baseline_duration','planned_duration','pd','duration_workdays','duration','duration_days','remaining_duration']);
       let duration=durationRaw===null?null:(parseInt(String(durationRaw).replace(/[^0-9-]/g,''),10)||null);
       if(duration===null) duration=baselineWorkdays(start,finish);
-      batch.push({project_id:selectedProjectId,company_id,activity_code:String(code).trim(),activity_name:String(name).trim(),area:String(pick(r,['area','location','building_area'])||'').trim()||null,original_start:start,original_finish:finish,current_start:currentStart,current_finish:currentFinish,duration_days:duration,status:'Not Started',percent_complete:0,source_upload:file.name});
+      batch.push({project_id:selectedProjectId,company_id,activity_code:String(code).trim(),activity_name:String(name).trim(),area:String(pick(r,['area','location','building_area'])||'').trim()||null,original_start:start,original_finish:finish,current_start:currentStart,current_finish:currentFinish,duration_days:duration,status:'Not Started',percent_complete:0,auto_percent:true,source_upload:file.name});
     }
     for(let i=0;i<batch.length;i+=200){
       const part=batch.slice(i,i+200); const {error}=await sb.from('activities').upsert(part,{onConflict:'project_id,activity_code',ignoreDuplicates:true}); if(error)throw error; imported+=part.length;

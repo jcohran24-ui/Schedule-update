@@ -122,3 +122,7 @@ Run `first_login_password_migration.sql` once in Supabase before deploying this 
 
 ## Admin user deletion
 GC Admin users can permanently delete managed users from Admin > User Management. The signed-in admin cannot delete their own account, and the Activity Admin account is protected from deletion. Deleting an Auth user also removes its public profile through the existing ON DELETE CASCADE relationship.
+
+
+## Automatic percent complete
+Run `auto_progress_migration.sql` once in Supabase SQL Editor before deploying this version. Activities marked **In Progress** automatically display percent complete from elapsed Monday-Friday workdays divided by the activity duration, capped at 99% until marked Complete. Activity Admin can turn Auto % off for an activity and enter a manual percentage.
