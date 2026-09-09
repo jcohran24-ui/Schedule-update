@@ -28,6 +28,33 @@ function baselineWorkdays(start, finish){
 function baselineDuration(a){
   return a.duration_days ?? baselineWorkdays(a.original_start,a.original_finish);
 }
+function finishFromStartAndDuration(start, duration){
+  if(!start || duration===null || duration===undefined || duration==='') return '';
+  const days=Number(duration);
+  if(!Number.isFinite(days) || days<=0) return '';
+  let d=new Date(start+'T12:00:00');
+  if(isNaN(d)) return '';
+  // Treat Current Start as workday 1 and skip Saturdays/Sundays.
+  while(d.getDay()===0 || d.getDay()===6) d.setDate(d.getDate()+1);
+  let counted=1;
+  while(counted<days){
+    d.setDate(d.getDate()+1);
+    const day=d.getDay();
+    if(day!==0 && day!==6) counted++;
+  }
+  return isoDate(d);
+}
+function autoFillEditFinish(){
+  const id=$('editId')?.value;
+  const a=activities.find(x=>x.id===id);
+  if(!a) return;
+  const finish=finishFromStartAndDuration($('editStart').value, baselineDuration(a));
+  if(finish) $('editFinish').value=finish;
+}
+function autoFillAdminFinish(){
+  const finish=finishFromStartAndDuration($('adminCurrentStart')?.value, $('adminDuration')?.value);
+  if(finish && $('adminCurrentFinish')) $('adminCurrentFinish').value=finish;
+}
 const esc = (s='') => String(s).replace(/[&<>'"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;',"'":'&#39;','"':'&quot;'}[c]));
 
 function toast(msg){ const el=$('toast'); el.textContent=msg; el.classList.remove('hidden'); setTimeout(()=>el.classList.add('hidden'),2600); }
@@ -216,12 +243,17 @@ function renderStats(rows=filteredActivities()){
 ['searchInput','tradeFilter','statusFilter'].forEach(id=>$(id)?.addEventListener(id==='searchInput'?'input':'change',renderActivities));
 document.querySelectorAll('.range-btn').forEach(b=>b.addEventListener('click',()=>{document.querySelectorAll('.range-btn').forEach(x=>x.classList.remove('active'));b.classList.add('active');currentRange=b.dataset.range;renderActivities();}));
 
+$('editStart')?.addEventListener('change', autoFillEditFinish);
+$('adminCurrentStart')?.addEventListener('change', autoFillAdminFinish);
+$('adminDuration')?.addEventListener('change', ()=>{ if($('adminCurrentStart')?.value) autoFillAdminFinish(); });
+
 function openEdit(id){
   if(!canUpdateActivity()) return;
   const a=activities.find(x=>x.id===id); if(!a)return;
   if(isActivityAdmin()){ openAdminActivity(a); return; }
   $('editId').value=a.id;$('editTitle').textContent=a.activity_name;$('editCode').textContent=`${a.activity_code} • ${a.area||'No area'}`;
   $('baselineDates').textContent=`${fmt(a.original_start)} • ${baselineDuration(a)==null?'—':baselineDuration(a)+'d'} • ${fmt(a.original_finish)}`;$('editStart').value=a.current_start||'';$('editFinish').value=a.current_finish||'';$('editStatus').value=a.status;$('editPercent').value=a.percent_complete;$('editNotes').value=a.notes||'';
+  if($('editStart').value && !$('editFinish').value) autoFillEditFinish();
   $('editModal').classList.remove('hidden');
 }
 $('closeModal')?.addEventListener('click',()=>$('editModal').classList.add('hidden'));
@@ -371,6 +403,7 @@ function openAdminActivity(a=null){
   $('adminStatus').value=a?.status||'Not Started';
   $('adminPercent').value=a?.percent_complete??0;
   $('adminNotes').value=a?.notes||'';
+  if($('adminCurrentStart').value && !$('adminCurrentFinish').value) autoFillAdminFinish();
   $('adminActivityModal').classList.remove('hidden');
 }
 $('addActivityBtn')?.addEventListener('click',()=>openAdminActivity());
