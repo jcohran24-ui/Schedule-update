@@ -44,6 +44,22 @@ function finishFromStartAndDuration(start, duration){
   }
   return isoDate(d);
 }
+function startFromFinishAndDuration(finish, duration){
+  if(!finish || duration===null || duration===undefined || duration==='') return '';
+  const days=Number(duration);
+  if(!Number.isFinite(days) || days<=0) return '';
+  let d=new Date(finish+'T12:00:00');
+  if(isNaN(d)) return '';
+  // Treat Current Finish as the final workday and skip Saturdays/Sundays backwards.
+  while(d.getDay()===0 || d.getDay()===6) d.setDate(d.getDate()-1);
+  let counted=1;
+  while(counted<days){
+    d.setDate(d.getDate()-1);
+    const day=d.getDay();
+    if(day!==0 && day!==6) counted++;
+  }
+  return isoDate(d);
+}
 function elapsedWorkdays(start, endDate=new Date()){
   if(!start) return 0;
   let s=new Date(start+'T12:00:00');
@@ -112,6 +128,18 @@ function autoFillEditFinish(){
 function autoFillAdminFinish(){
   const finish=finishFromStartAndDuration($('adminCurrentStart')?.value, $('adminDuration')?.value);
   if(finish && $('adminCurrentFinish')) $('adminCurrentFinish').value=finish;
+}
+function autoFillEditStart(){
+  const id=$('editId')?.value;
+  const a=activities.find(x=>x.id===id);
+  if(!a || $('editStart')?.value) return;
+  const start=startFromFinishAndDuration($('editFinish')?.value, baselineDuration(a));
+  if(start) $('editStart').value=start;
+}
+function autoFillAdminStart(){
+  if($('adminCurrentStart')?.value) return;
+  const start=startFromFinishAndDuration($('adminCurrentFinish')?.value, $('adminDuration')?.value);
+  if(start && $('adminCurrentStart')) $('adminCurrentStart').value=start;
 }
 const esc = (s='') => String(s).replace(/[&<>'"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;',"'":'&#39;','"':'&quot;'}[c]));
 
@@ -302,9 +330,15 @@ function renderStats(rows=filteredActivities()){
 document.querySelectorAll('.range-btn').forEach(b=>b.addEventListener('click',()=>{document.querySelectorAll('.range-btn').forEach(x=>x.classList.remove('active'));b.classList.add('active');currentRange=b.dataset.range;renderActivities();}));
 
 $('editStart')?.addEventListener('change', ()=>{ autoFillEditFinish(); refreshEditAutoPercent(); });
+$('editFinish')?.addEventListener('change', ()=>{ autoFillEditStart(); refreshEditAutoPercent(); });
 $('editStatus')?.addEventListener('change', refreshEditAutoPercent);
 $('adminCurrentStart')?.addEventListener('change', ()=>{ autoFillAdminFinish(); refreshAdminAutoPercent(); });
-$('adminDuration')?.addEventListener('change', ()=>{ if($('adminCurrentStart')?.value) autoFillAdminFinish(); refreshAdminAutoPercent(); });
+$('adminCurrentFinish')?.addEventListener('change', ()=>{ autoFillAdminStart(); refreshAdminAutoPercent(); });
+$('adminDuration')?.addEventListener('change', ()=>{
+  if($('adminCurrentStart')?.value) autoFillAdminFinish();
+  else if($('adminCurrentFinish')?.value) autoFillAdminStart();
+  refreshAdminAutoPercent();
+});
 $('adminStatus')?.addEventListener('change', refreshAdminAutoPercent);
 $('adminAutoPercent')?.addEventListener('change', refreshAdminAutoPercent);
 
@@ -315,6 +349,7 @@ function openEdit(id){
   $('editId').value=a.id;$('editTitle').textContent=a.activity_name;$('editCode').textContent=`${a.activity_code} • ${a.area||'No area'}`;
   $('baselineDates').textContent=`${fmt(a.original_start)} • ${baselineDuration(a)==null?'—':baselineDuration(a)+'d'} • ${fmt(a.original_finish)}`;$('editStart').value=a.current_start||'';$('editFinish').value=a.current_finish||'';$('editStatus').value=a.status;$('editPercent').value=effectivePercent(a);$('editNotes').value=a.notes||'';refreshEditAutoPercent();
   if($('editStart').value && !$('editFinish').value) autoFillEditFinish();
+  else if(!$('editStart').value && $('editFinish').value) autoFillEditStart();
   $('editModal').classList.remove('hidden');
 }
 $('closeModal')?.addEventListener('click',()=>$('editModal').classList.add('hidden'));
@@ -466,6 +501,7 @@ function openAdminActivity(a=null){
   $('adminPercent').value=a ? effectivePercent(a) : 0;
   $('adminNotes').value=a?.notes||'';
   if($('adminCurrentStart').value && !$('adminCurrentFinish').value) autoFillAdminFinish();
+  else if(!$('adminCurrentStart').value && $('adminCurrentFinish').value) autoFillAdminStart();
   refreshAdminAutoPercent();
   $('adminActivityModal').classList.remove('hidden');
 }
