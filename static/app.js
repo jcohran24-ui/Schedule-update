@@ -401,24 +401,40 @@ function renderGCMobileDashboard(rows){
   const mobileGC=isGC();
   dash.classList.toggle('hidden',!mobileGC);
   if(!mobileGC) return;
-  const attention=gcMobileAttentionRows();
-  const visible=gcMobileIssuesOnly ? attention.slice().sort(chronologicalSort) : rows;
-  const pastDue=activities.filter(a=>a.status!=='Complete'&&isPastDueActivity(a)).length;
-  const progress=activities.filter(a=>a.status==='In Progress').length;
-  const changes=activities.filter(a=>(a.current_start&&a.original_start!==a.current_start)||(a.current_finish&&a.original_finish!==a.current_finish)).length;
-  const scope=activities.filter(a=>a.scope_issue).length;
+
+  // The dashboard must reflect the exact same activity set produced by the
+  // active range/search/trade/status filters.
+  const baseRows=Array.isArray(rows)?rows:filteredActivities();
+  const attention=baseRows.filter(a=>a.status!=='Complete' && (
+    isPastDueActivity(a) ||
+    a.scope_issue ||
+    ((a.status==='In Progress'||a.status==='Delayed') && !a.current_start) ||
+    (a.current_start&&a.original_start&&a.current_start!==a.original_start) ||
+    (a.current_finish&&a.original_finish&&a.current_finish!==a.original_finish)
+  ));
+  const visible=gcMobileIssuesOnly ? attention.slice().sort(chronologicalSort) : baseRows;
+  const remaining=baseRows.filter(a=>a.status!=='Complete').length;
+  const pastDue=baseRows.filter(a=>a.status!=='Complete'&&isPastDueActivity(a)).length;
+  const progress=baseRows.filter(a=>a.status==='In Progress').length;
+  const changes=baseRows.filter(a=>(a.current_start&&a.original_start!==a.current_start)||(a.current_finish&&a.original_finish!==a.current_finish)).length;
+  const scope=baseRows.filter(a=>a.scope_issue).length;
+  const issues=baseRows.filter(a=>a.status!=='Complete' && (
+    a.scope_issue ||
+    (a.current_start&&a.original_start!==a.current_start) ||
+    (a.current_finish&&a.original_finish!==a.current_finish)
+  )).length;
   const label=currentRange==='4'?'4-Week Look Ahead':currentRange==='6'?'6-Week Look Ahead':currentRange==='changed'?'Changed Activities':'All Remaining';
   $('gcMobileSummaryText').textContent=label;
-  $('gcMobileStats').innerHTML=[['Remaining',activities.filter(a=>a.status!=='Complete').length,''],['Past Due',pastDue,'danger'],['In Progress',progress,'progress'],['Issues',scope+changes,'issue']].map(([l,n,c])=>`<button type="button" class="gc-mobile-stat ${c}" data-gc-stat="${l}"><strong>${n}</strong><span>${l}</span></button>`).join('');
+  $('gcMobileStats').innerHTML=[['Remaining',remaining,''],['Past Due',pastDue,'danger'],['In Progress',progress,'progress'],['Issues',issues,'issue']].map(([l,n,c])=>`<button type="button" class="gc-mobile-stat ${c}" data-gc-stat="${l}"><strong>${n}</strong><span>${l}</span></button>`).join('');
   const top=attention.slice().sort(chronologicalSort).slice(0,5);
   $('gcNeedsAttention').innerHTML=top.length?top.map(a=>`<button class="gc-attention-row" type="button" data-id="${a.id}"><div><strong>${esc(a.activity_code)} • ${esc(a.activity_name)}</strong><span>${esc(companyName(a.company_id))} • ${isPastDueActivity(a)?'Past Due':a.scope_issue?'Scope Flag':'Needs Review'}</span></div><b>›</b></button>`).join(''):'<div class="gc-attention-empty">Nothing needs attention right now.</div>';
   $('gcMobileResultCount').textContent=`${visible.length} activities`;
   $('gcActivityCards').innerHTML=visible.length?visible.map(gcMobileCardMarkup).join(''):'<div class="card empty">No activities match this view.</div>';
   document.querySelectorAll('.gc-activity-card,.gc-attention-row').forEach(b=>b.onclick=()=>{const a=activities.find(x=>x.id===b.dataset.id);if(a&&isActivityAdmin())openAdminActivity(a); else if(a) toast(`${a.activity_code}: ${a.activity_name}`);});
   document.querySelectorAll('.gc-mobile-stat').forEach(b=>b.onclick=()=>{
-    if(b.dataset.gcStat==='Past Due'){ gcMobileIssuesOnly=true; renderGCMobileDashboard(attention.filter(isPastDueActivity)); }
+    if(b.dataset.gcStat==='Past Due'){ gcMobileIssuesOnly=true; renderGCMobileDashboard(baseRows.filter(a=>a.status!=='Complete'&&isPastDueActivity(a))); }
     else if(b.dataset.gcStat==='In Progress'){ gcMobileIssuesOnly=false; $('statusFilter').value='In Progress'; renderActivities(); }
-    else if(b.dataset.gcStat==='Issues'){ gcMobileIssuesOnly=true; renderGCMobileDashboard(attention); }
+    else if(b.dataset.gcStat==='Issues'){ gcMobileIssuesOnly=true; renderGCMobileDashboard(baseRows); }
   });
 }
 
