@@ -75,42 +75,48 @@ function elapsedWorkdays(start, endDate=new Date()){
   }
   return n;
 }
-function calculateSchedulePercent(status,start,duration,stored=0,auto=true){
+function calculateSchedulePercent(status,start,duration,stored=0,auto=true,finish=''){
   if(status==='Complete') return 100;
   if(status==='Not Started' || !start) return 0;
-  if(auto && Number(duration)>0){
-    const elapsed=elapsedWorkdays(start);
-    if(elapsed<=0) return 0;
-    return Math.min(99, Math.max(1, Math.round((elapsed/Number(duration))*100)));
+  if(auto){
+    // If Current Start + Current Finish are both present, use that current workday span.
+    // Otherwise fall back to the activity duration.
+    const currentSpan = finish ? baselineWorkdays(start,finish) : null;
+    const totalDays = Number(currentSpan)>0 ? Number(currentSpan) : Number(duration);
+    if(totalDays>0){
+      const elapsed=elapsedWorkdays(start);
+      if(elapsed<=0) return 0;
+      return Math.min(99, Math.max(1, Math.round((elapsed/totalDays)*100)));
+    }
   }
   return Number(stored||0);
 }
 function effectivePercent(a){
   if(!a) return 0;
-  return calculateSchedulePercent(a.status,a.current_start,baselineDuration(a),a.percent_complete,a.auto_percent!==false);
+  return calculateSchedulePercent(a.status,a.current_start,baselineDuration(a),a.percent_complete,a.auto_percent!==false,a.current_finish);
 }
-function effectivePercentFromForm({status,start,duration,stored=0,auto=true}){
-  return calculateSchedulePercent(status,start,duration,stored,auto);
+function effectivePercentFromForm({status,start,finish='',duration,stored=0,auto=true}){
+  return calculateSchedulePercent(status,start,duration,stored,auto,finish);
 }
 function refreshEditAutoPercent(){
   const id=$('editId')?.value;
   const a=activities.find(x=>x.id===id);
   if(!a) return;
   const status=$('editStatus').value;
-  const pct=calculateSchedulePercent(status,$('editStart').value,baselineDuration(a),0,true);
+  const pct=calculateSchedulePercent(status,$('editStart').value,baselineDuration(a),0,true,$('editFinish').value);
   const display=$('editPercentDisplay'); if(display) display.textContent=`${pct}%`;
-  const note=$('editPercentAutoNote'); if(note) note.textContent=status==='Complete'?'Complete = 100%':($('editStart').value?'Calculated from elapsed workdays and activity duration':'Enter Current Start to calculate progress');
+  const note=$('editPercentAutoNote'); if(note) note.textContent=status==='Complete'?'Complete = 100%':($('editStart').value?'Calculated from elapsed workdays and current date span':'Enter Current Start to calculate progress');
 }
 function refreshAdminAutoPercent(){
   const status=$('adminStatus')?.value;
   const auto=$('adminAutoPercent')?.checked!==false;
   const duration=$('adminDuration')?.value;
-  const pct=effectivePercentFromForm({status,start:$('adminCurrentStart')?.value,duration,stored:$('adminPercent')?.value,auto});
+  const pct=effectivePercentFromForm({status,start:$('adminCurrentStart')?.value,finish:$('adminCurrentFinish')?.value,duration,stored:$('adminPercent')?.value,auto});
   if($('adminPercent')){
     $('adminPercent').value=pct;
     $('adminPercent').disabled=(auto && status==='In Progress') || status==='Complete';
   }
-  const note=$('adminPercentAutoNote'); if(note) note.textContent=(auto && status==='In Progress')?'Auto based on elapsed workdays':'Manual';
+  const note=$('adminPercentAutoNote'); if(note) note.textContent=(auto && status==='In Progress')?'Auto based on current date span':'Manual';
 }
 function autoFillEditFinish(){
   const id=$('editId')?.value;
@@ -556,7 +562,7 @@ $('saveNextBtn')?.addEventListener('click',()=>{saveAndNextRequested=true;});
 $('editForm')?.addEventListener('submit',async e=>{
   e.preventDefault(); const id=$('editId').value;
   const visibleBefore=filteredActivities(); const idx=visibleBefore.findIndex(x=>x.id===id); const nextId=idx>=0&&idx<visibleBefore.length-1?visibleBefore[idx+1].id:null;
-  const patch={current_start:$('editStart').value||null,current_finish:$('editFinish').value||null,status:$('editStatus').value,percent_complete:calculateSchedulePercent($('editStatus').value,$('editStart').value,baselineDuration(activities.find(x=>x.id===$('editId').value)),0,true),notes:$('editNotes').value.trim()||null,last_reviewed_at:new Date().toISOString(),scope_issue:false};
+  const patch={current_start:$('editStart').value||null,current_finish:$('editFinish').value||null,status:$('editStatus').value,percent_complete:calculateSchedulePercent($('editStatus').value,$('editStart').value,baselineDuration(activities.find(x=>x.id===$('editId').value)),0,true,$('editFinish').value),notes:$('editNotes').value.trim()||null,last_reviewed_at:new Date().toISOString(),scope_issue:false};
   if(patch.current_start && patch.current_finish && patch.current_finish<patch.current_start){toast('Finish date cannot be before start date');return;}
   const {error}=await sb.from('activities').update(patch).eq('id',id); if(error){toast(error.message);return;}
   closeEditModal();toast('Activity updated');await loadActivities();
@@ -776,7 +782,7 @@ $('adminActivityForm')?.addEventListener('submit',async e=>{
     duration_days:$('adminDuration').value===''?null:Number($('adminDuration').value),
     status:$('adminStatus').value,
     auto_percent:$('adminAutoPercent').checked,
-    percent_complete:effectivePercentFromForm({status:$('adminStatus').value,start:$('adminCurrentStart').value,duration:$('adminDuration').value,stored:$('adminPercent').value,auto:$('adminAutoPercent').checked}),
+    percent_complete:effectivePercentFromForm({status:$('adminStatus').value,start:$('adminCurrentStart').value,finish:$('adminCurrentFinish').value,duration:$('adminDuration').value,stored:$('adminPercent').value,auto:$('adminAutoPercent').checked}),
     notes:$('adminNotes').value.trim()||null,
   };
   if(!payload.activity_code||!payload.activity_name){toast('Activity ID and Activity Name are required');return;}
