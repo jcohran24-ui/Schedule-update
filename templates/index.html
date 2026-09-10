@@ -102,7 +102,26 @@
             </select>
           </div>
 
-          <div class="table-wrap card">
+          <div id="subDashboard" class="sub-dashboard hidden">
+            <div class="sub-welcome-card">
+              <div>
+                <div class="sub-kicker">4-Week Look Ahead</div>
+                <h2 id="subWelcome">Welcome</h2>
+                <p id="subReviewSummary" class="muted">Review your upcoming activities and update anything that has started or completed.</p>
+              </div>
+              <div id="subReviewProgress" class="sub-review-progress">0 of 0 reviewed</div>
+            </div>
+            <div id="subQuickStats" class="sub-quick-stats"></div>
+            <div id="subFilterChips" class="sub-filter-chips">
+              <button type="button" class="sub-chip active" data-sub-status="">All</button>
+              <button type="button" class="sub-chip" data-sub-status="Past Due">Past Due</button>
+              <button type="button" class="sub-chip" data-sub-status="In Progress">In Progress</button>
+              <button type="button" class="sub-chip" data-sub-status="Not Started">Not Started</button>
+            </div>
+            <div id="subActivityCards" class="sub-activity-cards"></div>
+          </div>
+
+          <div id="scheduleTableWrap" class="table-wrap card">
             <table>
               <thead>
                 <tr>
@@ -179,14 +198,24 @@
 
   <div id="editModal" class="modal hidden">
     <div class="modal-card">
-      <div class="modal-head"><div><h3 id="editTitle">Update Activity</h3><p id="editCode" class="muted"></p></div><button id="closeModal" class="icon-btn">×</button></div>
-      <div class="baseline-box"><span>Baseline</span><strong id="baselineDates"></strong></div>
+      <div class="modal-head sub-edit-head"><div><button id="subBackBtn" type="button" class="sub-back-link">← Back to Schedule</button><h3 id="editTitle">Update Activity</h3><p id="editCode" class="muted"></p></div><div class="sub-edit-head-right"><span id="editPosition" class="sub-position"></span><button id="closeModal" class="icon-btn">×</button></div></div>
+      <div id="editPastDueBadge" class="past-due-badge hidden">Past Due</div>
+      <div class="baseline-box sub-baseline-box"><span>Baseline (Planned)</span><strong id="baselineDates"></strong></div>
       <form id="editForm" class="stack">
         <input id="editId" type="hidden">
         <div class="two-col"><label>Current Start<input id="editStart" type="date"></label><label>Current Finish<input id="editFinish" type="date"></label></div>
-        <div class="two-col"><label>Status<select id="editStatus"><option>Not Started</option><option>Starting Soon</option><option>In Progress</option><option>Complete</option><option>Delayed</option><option>On Hold</option></select></label><label>Percent Complete<input id="editPercent" type="number" min="0" max="100"><span id="editPercentAutoNote" class="muted small"></span></label></div>
-        <label>Update / Delay Comment<textarea id="editNotes" rows="4" placeholder="What changed, why, or what is needed?"></textarea></label>
-        <button class="primary">Save Update</button>
+        <div class="sub-status-buttons" aria-label="Status">
+          <button type="button" class="sub-status-btn" data-quick-status="Not Started">Not Started</button>
+          <button type="button" class="sub-status-btn started" data-quick-status="In Progress">Started</button>
+          <button type="button" class="sub-status-btn complete" data-quick-status="Complete">Complete</button>
+        </div>
+        <div class="two-col"><label>Status<select id="editStatus"><option>Not Started</option><option>Starting Soon</option><option>In Progress</option><option>Complete</option><option>Delayed</option><option>On Hold</option></select></label><div class="sub-auto-percent"><span>Percent Complete</span><strong id="editPercentDisplay">0%</strong><span id="editPercentAutoNote" class="muted small">Calculated automatically from current start and duration</span></div></div>
+        <label>Notes / Comments<textarea id="editNotes" rows="4" placeholder="What changed, why, or what is needed?"></textarea></label>
+        <div class="sub-review-actions">
+          <button id="notMyScopeBtn" class="scope-btn" type="button">⊘ Not My Scope</button>
+          <button id="noChangesBtn" class="reviewed-btn" type="button">✓ No Changes (Reviewed)</button>
+        </div>
+        <button id="saveNextBtn" class="primary save-next-btn">Save & Next</button>
       </form>
     </div>
   </div>

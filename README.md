@@ -170,3 +170,18 @@ The installed app launches full-screen from the home screen with its own Trade S
 
 ### Optional App Store / Play Store wrapper
 The `mobile/` folder contains a Capacitor starter configuration for a future native wrapper. Replace the placeholder Render URL before using it.
+
+
+## V19 mobile modal scrolling fix
+- Edit, password, and Activity Admin modals now scroll vertically on phones.
+- Save buttons remain reachable/sticky near the bottom while editing.
+- Added iPhone safe-area handling for modal spacing.
+
+## V20 - Foreman Review Mode
+Subcontractor users now default to a mobile-first 4-Week Look Ahead with activity cards, quick status buttons, Save & Next, No Changes, Not My Scope, review progress, and overdue highlighting.
+
+Run `foreman_review_mode_migration.sql` once in Supabase SQL Editor before using the new review buttons.
+
+
+## V21 — Automatic subcontractor percent complete
+Subcontractors can no longer type Percent Complete. The foreman review screen displays a read-only percentage calculated from the activity Current Start date and Duration using Monday-Friday workdays. Not Started = 0%, Complete = 100%, and active work is capped at 99% until marked Complete. GC/Admin percent controls remain available. No database migration is required for this change.

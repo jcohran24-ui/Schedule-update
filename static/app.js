@@ -11,6 +11,8 @@ let activities = [];
 let profiles = [];
 let selectedProjectId = null;
 let currentRange = 'all';
+let subStatusFilter = '';
+let saveAndNextRequested = false;
 
 const $ = (id) => document.getElementById(id);
 const fmt = (d) => d ? new Date(d + 'T12:00:00').toLocaleDateString() : '—';
@@ -72,40 +74,31 @@ function elapsedWorkdays(start, endDate=new Date()){
   }
   return n;
 }
-function effectivePercent(a){
-  if(!a) return 0;
-  if(a.status==='Complete') return 100;
-  if(a.status==='Not Started' && !a.current_start) return 0;
-  if(a.auto_percent!==false && a.status==='In Progress' && a.current_start){
-    const duration=baselineDuration(a);
-    if(duration && Number(duration)>0){
-      const elapsed=elapsedWorkdays(a.current_start);
-      if(elapsed<=0) return 0;
-      return Math.min(99, Math.max(1, Math.round((elapsed/Number(duration))*100)));
-    }
-  }
-  return Number(a.percent_complete||0);
-}
-function effectivePercentFromForm({status,start,duration,stored=0,auto=true}){
+function calculateSchedulePercent(status,start,duration,stored=0,auto=true){
   if(status==='Complete') return 100;
-  if(status==='Not Started' && !start) return 0;
-  if(auto && status==='In Progress' && start && Number(duration)>0){
+  if(status==='Not Started' || !start) return 0;
+  if(auto && Number(duration)>0){
     const elapsed=elapsedWorkdays(start);
     if(elapsed<=0) return 0;
     return Math.min(99, Math.max(1, Math.round((elapsed/Number(duration))*100)));
   }
   return Number(stored||0);
 }
+function effectivePercent(a){
+  if(!a) return 0;
+  return calculateSchedulePercent(a.status,a.current_start,baselineDuration(a),a.percent_complete,a.auto_percent!==false);
+}
+function effectivePercentFromForm({status,start,duration,stored=0,auto=true}){
+  return calculateSchedulePercent(status,start,duration,stored,auto);
+}
 function refreshEditAutoPercent(){
   const id=$('editId')?.value;
   const a=activities.find(x=>x.id===id);
   if(!a) return;
   const status=$('editStatus').value;
-  const auto=status==='In Progress';
-  const pct=effectivePercentFromForm({status,start:$('editStart').value,duration:baselineDuration(a),stored:$('editPercent').value,auto});
-  $('editPercent').value=pct;
-  $('editPercent').disabled=auto || status==='Complete';
-  const note=$('editPercentAutoNote'); if(note) note.textContent=auto?'Auto based on elapsed workdays':'Manual';
+  const pct=calculateSchedulePercent(status,$('editStart').value,baselineDuration(a),0,true);
+  const display=$('editPercentDisplay'); if(display) display.textContent=`${pct}%`;
+  const note=$('editPercentAutoNote'); if(note) note.textContent=status==='Complete'?'Complete = 100%':($('editStart').value?'Calculated from elapsed workdays and activity duration':'Enter Current Start to calculate progress');
 }
 function refreshAdminAutoPercent(){
   const status=$('adminStatus')?.value;
@@ -148,6 +141,7 @@ function isGC(){ return profile && ['gc','gc_admin'].includes(profile.role); }
 function isAdmin(){ return profile && profile.role === 'gc_admin'; }
 function isActivityAdmin(){ return profile && profile.is_activity_admin === true; }
 function canUpdateActivity(){ return profile && (profile.role === 'sub' || isActivityAdmin()); }
+function isSub(){ return profile && profile.role === 'sub'; }
 function companyName(id){ return companies.find(c=>c.id===id)?.company_name || 'Unassigned'; }
 function profileName(id){ return profiles.find(p=>p.id===id)?.full_name || profiles.find(p=>p.id===id)?.email || 'User'; }
 
@@ -209,12 +203,17 @@ async function enterApp(s){
   }
   $('forcePasswordScreen').classList.add('hidden');
   $('appScreen').classList.remove('hidden');
+  document.body.classList.toggle('sub-mode',p.role==='sub');
   $('userBadge').textContent=`${p.full_name || p.email} • ${p.role==='sub'?'Subcontractor':p.role==='gc_admin'?'GC Admin':'GC'}${p.is_activity_admin?' • Activity Editor':''}`;
   document.querySelectorAll('.gc-only').forEach(el=>el.classList.toggle('hidden',!isGC()));
   document.querySelectorAll('.admin-only').forEach(el=>el.classList.toggle('hidden',!(isAdmin() || isActivityAdmin())));
   document.querySelectorAll('.gc-admin-only').forEach(el=>el.classList.toggle('hidden',!isAdmin()));
   document.querySelectorAll('.activity-admin-only').forEach(el=>el.classList.toggle('hidden',!isActivityAdmin()));
   $('scheduleTitle').textContent = p.role==='sub' ? 'My Activities' : 'Remaining Schedule';
+  if(p.role==='sub'){
+    currentRange='4';
+    document.querySelectorAll('.range-btn').forEach(x=>x.classList.toggle('active',x.dataset.range==='4'));
+  }
   await loadReferenceData();
   await loadActivities();
 }
@@ -316,6 +315,13 @@ function filteredActivities(){
     }
     if(trade && a.company_id!==trade) return false;
     if(status && a.status!==status) return false;
+    if(isSub() && subStatusFilter){
+      const effStart=effectiveScheduleStart(a);
+      const startDate=effStart?new Date(effStart+'T12:00:00'):null;
+      if(subStatusFilter==='Past Due'){
+        if(!(a.status==='Not Started' && startDate && startDate<today)) return false;
+      } else if(a.status!==subStatusFilter) return false;
+    }
     const hay=[a.activity_code,a.activity_name,a.area,companyName(a.company_id)].join(' ').toLowerCase();
     if(q && !hay.includes(q)) return false;
     return true;
@@ -325,37 +331,87 @@ function filteredActivities(){
   if(['4','6'].includes(currentRange)) rows.sort(chronologicalSort);
   return rows;
 }
+function isPastDueActivity(a){
+  if(!a || a.status!=='Not Started') return false;
+  const s=effectiveScheduleStart(a); if(!s) return false;
+  const today=new Date(); today.setHours(0,0,0,0);
+  return new Date(s+'T12:00:00') < today;
+}
+function reviewedRecently(a){
+  if(!a?.last_reviewed_at) return false;
+  const d=new Date(a.last_reviewed_at); if(isNaN(d)) return false;
+  return (Date.now()-d.getTime()) <= 7*24*60*60*1000;
+}
+function renderSubDashboard(rows){
+  const dash=$('subDashboard'), table=$('scheduleTableWrap');
+  if(!dash || !table) return;
+  dash.classList.toggle('hidden',!isSub());
+  table.classList.toggle('hidden',isSub());
+  $('stats')?.classList.toggle('hidden',isSub());
+  $('scheduleTitle')?.classList.toggle('hidden',isSub());
+  $('scheduleSubtitle')?.classList.toggle('hidden',isSub());
+  if(!isSub()) return;
+
+  const baseRows=activities.filter(a=>a.status!=='Complete');
+  const lookRows=filteredActivities();
+  const pastDue=lookRows.filter(isPastDueActivity).length;
+  const progress=lookRows.filter(a=>a.status==='In Progress').length;
+  const notStarted=lookRows.filter(a=>a.status==='Not Started').length;
+  const reviewed=lookRows.filter(reviewedRecently).length;
+  const name=(profile.full_name||'').split(' ')[0]||'there';
+  $('subWelcome').textContent=`Welcome, ${name}!`;
+  $('subReviewSummary').textContent="Here’s your 4-Week Look Ahead. Review each activity and update anything that has started or completed.";
+  $('subReviewProgress').textContent=`${reviewed} of ${lookRows.length} reviewed`;
+  $('subQuickStats').innerHTML=[['Total',lookRows.length,''],['Past Due',pastDue,'past'],['In Progress',progress,'progress'],['Not Started',notStarted,'']].map(([l,n,c])=>`<div class="sub-stat ${c}"><strong>${n}</strong><span>${l}</span></div>`).join('');
+
+  $('subActivityCards').innerHTML=rows.map(a=>{
+    const overdue=isPastDueActivity(a);
+    const pct=effectivePercent(a);
+    const review=reviewedRecently(a)?'<span class="reviewed-mark">✓ Reviewed</span>':'';
+    const scope=a.scope_issue?'<span class="scope-flag">Not My Scope</span>':'';
+    return `<button class="sub-activity-card ${overdue?'overdue':''} ${a.status==='In Progress'?'in-progress':''}" data-id="${a.id}" type="button">
+      <div class="sub-card-main"><div class="sub-card-top"><strong>${esc(a.activity_name)}</strong>${overdue?'<span class="past-chip">Past Due</span>':a.status==='In Progress'?'<span class="progress-chip">In Progress</span>':`<span class="status-chip">${esc(a.status)}</span>`}</div>
+      <div class="sub-card-meta">${esc(a.activity_code)}${a.area?' • '+esc(a.area):''}</div>
+      <div class="sub-card-dates">${fmt(effectiveScheduleStart(a))} – ${fmt(effectiveScheduleFinish(a))}</div>
+      <div class="sub-card-bottom"><span>${a.status==='In Progress'?pct+'% Complete':esc(a.status)}</span>${review}${scope}</div></div><span class="sub-card-arrow">›</span>
+    </button>`;
+  }).join('') || '<div class="card empty">No activities match this view.</div>';
+  document.querySelectorAll('.sub-activity-card').forEach(b=>b.onclick=()=>openEdit(b.dataset.id));
+}
 function renderActivities(){
   const rows=filteredActivities(); $('emptyState').classList.toggle('hidden',rows.length>0);
-  $('activityBody').innerHTML=rows.map(a=>{
-    const startChanged=a.original_start!==a.current_start, finishChanged=a.original_finish!==a.current_finish;
-    return `<tr>
-      <td class="gc-only ${!isGC()?'hidden':''}">${esc(companyName(a.company_id))}</td>
-      <td><strong>${esc(a.activity_code)}</strong></td><td>${esc(a.area||'')}</td><td>${esc(a.activity_name)}</td>
-      <td>${fmt(a.original_start)}</td><td>${baselineDuration(a)==null?'—':`${baselineDuration(a)}d`}</td><td>${fmt(a.original_finish)}</td>
-      <td><span class="${startChanged?'changed-date':''}">${fmt(a.current_start)}</span></td><td><span class="${finishChanged?'changed-date':''}">${fmt(a.current_finish)}</span></td>
-      <td><span class="status">${esc(a.status)}</span></td><td>${effectivePercent(a)}%</td>
-      <td>${canUpdateActivity()?`<button class="ghost edit-act" data-id="${a.id}">${isActivityAdmin()?'Edit':'Update'}</button>`:'<span class="muted small">View only</span>'}</td></tr>`;
-  }).join('');
-  document.querySelectorAll('.edit-act').forEach(b=>b.onclick=()=>openEdit(b.dataset.id));
+  renderSubDashboard(rows);
+  if(!isSub()){
+    $('activityBody').innerHTML=rows.map(a=>{
+      const startChanged=!!a.current_start && a.original_start!==a.current_start, finishChanged=!!a.current_finish && a.original_finish!==a.current_finish;
+      return `<tr>
+        <td class="gc-only ${!isGC()?'hidden':''}">${esc(companyName(a.company_id))}</td>
+        <td><strong>${esc(a.activity_code)}</strong></td><td>${esc(a.area||'')}</td><td>${esc(a.activity_name)}${a.scope_issue?' <span class="scope-flag">Scope flagged</span>':''}</td>
+        <td>${fmt(a.original_start)}</td><td>${baselineDuration(a)==null?'—':`${baselineDuration(a)}d`}</td><td>${fmt(a.original_finish)}</td>
+        <td><span class="${startChanged?'changed-date':''}">${fmt(a.current_start)}</span></td><td><span class="${finishChanged?'changed-date':''}">${fmt(a.current_finish)}</span></td>
+        <td><span class="status">${esc(a.status)}</span></td><td>${effectivePercent(a)}%</td>
+        <td>${canUpdateActivity()?`<button class="ghost edit-act" data-id="${a.id}">${isActivityAdmin()?'Edit':'Update'}</button>`:'<span class="muted small">View only</span>'}</td></tr>`;
+    }).join('');
+    document.querySelectorAll('.edit-act').forEach(b=>b.onclick=()=>openEdit(b.dataset.id));
+  }
   renderStats(rows);
 }
 function renderStats(rows=filteredActivities()){
   const today=isoDate(new Date());
   // Stats always reflect the activities currently visible under the active filters.
   const remaining=rows.filter(a=>a.status!=='Complete').length;
-  const delayed=rows.filter(a=>a.status==='Delayed' || (a.current_finish && a.current_finish<today && a.status!=='Complete')).length;
-  const changed=rows.filter(a=>a.original_start!==a.current_start || a.original_finish!==a.current_finish).length;
+  const delayed=rows.filter(a=>a.status==='Delayed' || isPastDueActivity(a)).length;
+  const changed=rows.filter(a=>(a.current_start&&a.original_start!==a.current_start)||(a.current_finish&&a.original_finish!==a.current_finish)).length;
   const progress=rows.filter(a=>a.status==='In Progress').length;
   $('stats').innerHTML=[['Remaining',remaining],['In Progress',progress],['Delayed / Past Due',delayed],['Date Changes',changed]].map(([l,n])=>`<div class="stat"><div class="num">${n}</div><div class="label">${l}</div></div>`).join('');
 }
 
 ['searchInput','tradeFilter','statusFilter'].forEach(id=>$(id)?.addEventListener(id==='searchInput'?'input':'change',renderActivities));
 document.querySelectorAll('.range-btn').forEach(b=>b.addEventListener('click',()=>{document.querySelectorAll('.range-btn').forEach(x=>x.classList.remove('active'));b.classList.add('active');currentRange=b.dataset.range;renderActivities();}));
+document.querySelectorAll('.sub-chip').forEach(b=>b.addEventListener('click',()=>{document.querySelectorAll('.sub-chip').forEach(x=>x.classList.remove('active'));b.classList.add('active');subStatusFilter=b.dataset.subStatus||'';renderActivities();}));
 
 $('editStart')?.addEventListener('change', ()=>{ autoFillEditFinish(); refreshEditAutoPercent(); });
 $('editFinish')?.addEventListener('change', ()=>{ autoFillEditStart(); refreshEditAutoPercent(); });
-$('editStatus')?.addEventListener('change', refreshEditAutoPercent);
 $('adminCurrentStart')?.addEventListener('change', ()=>{ autoFillAdminFinish(); refreshAdminAutoPercent(); });
 $('adminCurrentFinish')?.addEventListener('change', ()=>{ autoFillAdminStart(); refreshAdminAutoPercent(); });
 $('adminDuration')?.addEventListener('change', ()=>{
@@ -366,24 +422,65 @@ $('adminDuration')?.addEventListener('change', ()=>{
 $('adminStatus')?.addEventListener('change', refreshAdminAutoPercent);
 $('adminAutoPercent')?.addEventListener('change', refreshAdminAutoPercent);
 
+function updateQuickStatusButtons(){
+  const s=$('editStatus')?.value;
+  document.querySelectorAll('.sub-status-btn').forEach(b=>b.classList.toggle('selected',b.dataset.quickStatus===s));
+}
 function openEdit(id){
   if(!canUpdateActivity()) return;
   const a=activities.find(x=>x.id===id); if(!a)return;
   if(isActivityAdmin()){ openAdminActivity(a); return; }
   $('editId').value=a.id;$('editTitle').textContent=a.activity_name;$('editCode').textContent=`${a.activity_code} • ${a.area||'No area'}`;
-  $('baselineDates').textContent=`${fmt(a.original_start)} • ${baselineDuration(a)==null?'—':baselineDuration(a)+'d'} • ${fmt(a.original_finish)}`;$('editStart').value=a.current_start||'';$('editFinish').value=a.current_finish||'';$('editStatus').value=a.status;$('editPercent').value=effectivePercent(a);$('editNotes').value=a.notes||'';refreshEditAutoPercent();
+  $('baselineDates').textContent=`Start ${fmt(a.original_start)} • ${baselineDuration(a)==null?'—':baselineDuration(a)+' days'} • Finish ${fmt(a.original_finish)}`;$('editStart').value=a.current_start||'';$('editFinish').value=a.current_finish||'';$('editStatus').value=a.status;$('editNotes').value=a.notes||'';refreshEditAutoPercent();
   if($('editStart').value && !$('editFinish').value) autoFillEditFinish();
   else if(!$('editStart').value && $('editFinish').value) autoFillEditStart();
+  const rows=filteredActivities(); const pos=rows.findIndex(x=>x.id===a.id); $('editPosition').textContent=pos>=0?`${pos+1} of ${rows.length}`:'';
+  $('editPastDueBadge').classList.toggle('hidden',!isPastDueActivity(a));
+  updateQuickStatusButtons();
+  saveAndNextRequested=false;
   $('editModal').classList.remove('hidden');
 }
-$('closeModal')?.addEventListener('click',()=>$('editModal').classList.add('hidden'));
-$('editModal')?.addEventListener('click',e=>{if(e.target===$('editModal'))$('editModal').classList.add('hidden')});
+function closeEditModal(){ $('editModal').classList.add('hidden'); }
+$('closeModal')?.addEventListener('click',closeEditModal);
+$('subBackBtn')?.addEventListener('click',closeEditModal);
+$('editModal')?.addEventListener('click',e=>{if(e.target===$('editModal'))closeEditModal()});
+
+document.querySelectorAll('.sub-status-btn').forEach(b=>b.addEventListener('click',()=>{
+  const status=b.dataset.quickStatus;
+  $('editStatus').value=status;
+  if(status==='In Progress' && !$('editStart').value){ $('editStart').value=isoDate(new Date()); autoFillEditFinish(); }
+  if(status==='Complete'){
+    if(!$('editFinish').value) $('editFinish').value=isoDate(new Date());
+    if(!$('editStart').value) autoFillEditStart();
+  }
+  refreshEditAutoPercent(); updateQuickStatusButtons();
+}));
+$('editStatus')?.addEventListener('change',()=>{refreshEditAutoPercent();updateQuickStatusButtons();});
+
+async function patchReviewOnly(extra){
+  const id=$('editId').value;
+  const patch={last_reviewed_at:new Date().toISOString(),...extra};
+  const {error}=await sb.from('activities').update(patch).eq('id',id);
+  if(error){toast(error.message);return false;}
+  await loadActivities(); return true;
+}
+$('notMyScopeBtn')?.addEventListener('click',async()=>{
+  if(!confirm('Flag this activity as not belonging to your company?')) return;
+  if(await patchReviewOnly({scope_issue:true})){toast('Flagged for GC review');closeEditModal();}
+});
+$('noChangesBtn')?.addEventListener('click',async()=>{
+  if(await patchReviewOnly({last_reviewed_at:new Date().toISOString(),scope_issue:false})){toast('Marked reviewed');closeEditModal();}
+});
+$('saveNextBtn')?.addEventListener('click',()=>{saveAndNextRequested=true;});
 $('editForm')?.addEventListener('submit',async e=>{
   e.preventDefault(); const id=$('editId').value;
-  const patch={current_start:$('editStart').value||null,current_finish:$('editFinish').value||null,status:$('editStatus').value,percent_complete:effectivePercentFromForm({status:$('editStatus').value,start:$('editStart').value,duration:baselineDuration(activities.find(x=>x.id===$('editId').value)),stored:$('editPercent').value,auto:$('editStatus').value==='In Progress'}),notes:$('editNotes').value.trim()||null};
+  const visibleBefore=filteredActivities(); const idx=visibleBefore.findIndex(x=>x.id===id); const nextId=idx>=0&&idx<visibleBefore.length-1?visibleBefore[idx+1].id:null;
+  const patch={current_start:$('editStart').value||null,current_finish:$('editFinish').value||null,status:$('editStatus').value,percent_complete:calculateSchedulePercent($('editStatus').value,$('editStart').value,baselineDuration(activities.find(x=>x.id===$('editId').value)),0,true),notes:$('editNotes').value.trim()||null,last_reviewed_at:new Date().toISOString(),scope_issue:false};
   if(patch.current_start && patch.current_finish && patch.current_finish<patch.current_start){toast('Finish date cannot be before start date');return;}
   const {error}=await sb.from('activities').update(patch).eq('id',id); if(error){toast(error.message);return;}
-  $('editModal').classList.add('hidden');toast('Activity updated');await loadActivities();
+  closeEditModal();toast('Activity updated');await loadActivities();
+  if(saveAndNextRequested && nextId && activities.some(a=>a.id===nextId)) setTimeout(()=>openEdit(nextId),120);
+  saveAndNextRequested=false;
 });
 
 // Navigation
