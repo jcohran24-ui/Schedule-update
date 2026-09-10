@@ -258,3 +258,10 @@ When an activity has a Current Start but no Current Finish, lookahead filtering 
 - Moved user/company creation forms into expandable create panels.
 - Preserved existing permissions: GC Admin user/company/project controls and Activity Admin activity/import controls.
 - No database migration required.
+
+
+## V36 - Unassigned Trade Filter
+- Added an Unassigned option to the main Schedule Trade filter.
+- Selecting Unassigned shows only activities with no company/trade assignment.
+- Works with the existing look-ahead, status, search, and Changed filters.
+- No Supabase migration required.

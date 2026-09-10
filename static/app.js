@@ -242,7 +242,11 @@ function renderProjectOptions(){
   $('projectList').innerHTML = projects.map(p=>`<div class="mini-row"><span>${esc(p.project_name)}</span><span>${p.active?'Active':'Inactive'}</span></div>`).join('');
 }
 function renderCompanies(){
-  if($('tradeFilter')) $('tradeFilter').innerHTML='<option value="">All Trades</option>'+companies.map(c=>`<option value="${c.id}">${esc(c.company_name)}</option>`).join('');
+  if($('tradeFilter')){
+    const current=$('tradeFilter').value;
+    $('tradeFilter').innerHTML='<option value="">All Trades</option>'+companies.map(c=>`<option value="${c.id}">${esc(c.company_name)}</option>`).join('')+'<option value="__unassigned">Unassigned</option>';
+    $('tradeFilter').value=current;
+  }
   if($('userCompany')) $('userCompany').innerHTML='<option value="">Select company</option>'+companies.map(c=>`<option value="${c.id}">${esc(c.company_name)}</option>`).join('');
   if($('companyList')) $('companyList').innerHTML=companies.map(c=>`<div class="mini-row"><span>${esc(c.company_name)}</span><span>${esc(c.trade||'')}</span></div>`).join('');
   if($('companiesTradesCount')) $('companiesTradesCount').textContent=`${companies.length} ${companies.length===1?'company':'companies'}`;
@@ -420,7 +424,8 @@ function filteredActivities(){
       const inLookaheadWindow = s <= horizon && f >= today;
       if(!overdueNotStarted && !inLookaheadWindow) return false;
     }
-    if(trade && a.company_id!==trade) return false;
+    if(trade==='__unassigned' && a.company_id) return false;
+    if(trade && trade!=='__unassigned' && a.company_id!==trade) return false;
     if(status && a.status!==status) return false;
     if(isSub() && subStatusFilter){
       const effStart=effectiveScheduleStart(a);
