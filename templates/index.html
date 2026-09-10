@@ -100,6 +100,7 @@
               <option>Not Started</option><option>Starting Soon</option><option>In Progress</option>
               <option>Delayed</option><option>On Hold</option><option>Complete</option>
             </select>
+            <button id="exportLookaheadBtn" class="ghost" type="button">Export PDF</button>
           </div>
 
           <div id="gcMobileDashboard" class="gc-mobile-dashboard hidden">
@@ -217,6 +218,26 @@
       <button type="button" class="gc-mobile-nav-btn admin-only" data-mobile-view="admin"><span>⚙</span>Admin</button>
     </nav>
   </section>
+
+
+  <div id="exportLookaheadModal" class="modal hidden">
+    <div class="modal-card export-modal-card">
+      <div class="modal-head"><div><h3>Export Look-Ahead PDF</h3><p class="muted">Create a field-ready 4-week or 6-week schedule.</p></div><button id="closeExportLookaheadModal" class="icon-btn" type="button">×</button></div>
+      <form id="exportLookaheadForm" class="stack">
+        <label>Look-Ahead
+          <select id="exportRange">
+            <option value="4">4 Week</option>
+            <option value="6">6 Week</option>
+          </select>
+        </label>
+        <label id="exportTradeLabel">Trade
+          <select id="exportTrade"><option value="">All Trades</option></select>
+        </label>
+        <p class="muted small">PDF includes activity ID, activity, baseline dates, current dates, status, finish variance, and notes. All-trade exports are grouped by trade.</p>
+        <button id="generateLookaheadPdfBtn" class="primary" type="submit">Generate PDF</button>
+      </form>
+    </div>
+  </div>
 
   <div id="editModal" class="modal hidden">
     <div class="modal-card">

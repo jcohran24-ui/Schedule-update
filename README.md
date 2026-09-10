@@ -223,3 +223,28 @@ When an activity has a Current Start but no Current Finish, lookahead filtering 
 - Clear is no longer dependent on Android/iOS native date-picker UI.
 - Desktop keeps the native date input.
 - Service-worker cache bumped to v31.
+
+## V32 - Changed filter = subcontractor changes only
+- The Changed filter now uses the existing activity audit history.
+- An activity appears under Changed only when a user with role `sub` has actually changed that activity.
+- GC/Admin edits by themselves no longer make an activity appear in Changed.
+- Baseline/current date differences alone no longer cause every imported activity to appear in Changed.
+- No Supabase migration required; this uses the existing `activity_history.changed_by` audit data.
+
+
+## V33 - Subcontractor-only meaningful Change History
+- Change History now shows only meaningful changes saved by users whose profile role is `sub`.
+- Legacy/import/reset/GC/Admin rows are excluded.
+- No-op audit rows are excluded.
+- The Changed filter uses the same subcontractor + meaningful-change rule.
+- No Supabase migration required.
+
+## V34 - Look-Ahead PDF Export
+- Added an Export PDF button to the Schedule toolbar.
+- Export 4-week or 6-week look-aheads.
+- GC/GC Admin can export All Trades or a single trade.
+- Subcontractors can export only their own assigned trade.
+- PDFs are landscape, grouped by trade, and include Activity ID/Area, Activity, Baseline dates, Current dates, Status/Percent, Finish Variance, and Notes.
+- Finish variance uses Monday-Friday workdays and compares Current Finish to Baseline Finish.
+- Added ReportLab to requirements.txt for server-side PDF generation.
+- No Supabase migration required.

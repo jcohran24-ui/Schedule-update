@@ -134,3 +134,11 @@
   }
 }
 
+
+/* V34 look-ahead PDF export */
+.export-modal-card{max-width:520px}
+#exportLookaheadBtn{white-space:nowrap}
+@media (max-width:760px){
+  #exportLookaheadBtn{width:100%;min-height:44px}
+  .export-modal-card{width:100%}
+}

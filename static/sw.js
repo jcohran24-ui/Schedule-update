@@ -1,4 +1,4 @@
-const CACHE_NAME = 'trade-schedule-v31-v32-v33';
+const CACHE_NAME = 'trade-schedule-v34-pdf-export';
 const APP_SHELL = [
   '/',
   '/static/styles.css',

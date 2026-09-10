@@ -1,11 +1,13 @@
 import os
+import io
 import smtplib
 import ssl
+from datetime import datetime
 from email.message import EmailMessage
 from email.utils import formataddr
 from functools import wraps
 import requests
-from flask import Flask, jsonify, render_template, request, send_from_directory
+from flask import Flask, jsonify, render_template, request, send_from_directory, send_file
 
 app = Flask(__name__)
 SUPABASE_URL = os.getenv('SUPABASE_URL', '').rstrip('/')
@@ -386,6 +388,162 @@ def email_foremen():
         'sent': sent,
         'failed': failed,
     }), (200 if sent else 500)
+
+
+def verify_logged_in(auth_header):
+    if not auth_header or not auth_header.lower().startswith('bearer '):
+        return None, ('Missing login token', 401)
+    token = auth_header.split(' ', 1)[1].strip()
+    user_resp = requests.get(
+        f'{SUPABASE_URL}/auth/v1/user',
+        headers={'apikey': SUPABASE_ANON_KEY, 'Authorization': f'Bearer {token}'},
+        timeout=15,
+    )
+    if user_resp.status_code != 200:
+        return None, ('Invalid or expired login', 401)
+    user = user_resp.json() or {}
+    if not user.get('id'):
+        return None, ('Invalid user', 401)
+    return user, None
+
+
+def _pdf_date(value):
+    if not value:
+        return '-'
+    try:
+        return datetime.strptime(value, '%Y-%m-%d').strftime('%-m/%-d/%Y')
+    except Exception:
+        try:
+            return datetime.strptime(value, '%Y-%m-%d').strftime('%m/%d/%Y').lstrip('0').replace('/0','/')
+        except Exception:
+            return str(value)
+
+
+def _variance_label(value):
+    if value is None:
+        return '-'
+    try:
+        n = int(value)
+    except Exception:
+        return '-'
+    if n == 0:
+        return '0d'
+    return f'+{n}d late' if n > 0 else f'{abs(n)}d early'
+
+
+@app.route('/api/export/lookahead-pdf', methods=['POST'])
+def export_lookahead_pdf():
+    user, err = verify_logged_in(request.headers.get('Authorization'))
+    if err:
+        return jsonify({'error': err[0]}), err[1]
+
+    data = request.get_json(silent=True) or {}
+    rows = data.get('rows') or []
+    if not isinstance(rows, list) or not rows:
+        return jsonify({'error': 'No activities were supplied for the PDF'}), 400
+    if len(rows) > 2000:
+        return jsonify({'error': 'Too many activities for one PDF export'}), 400
+
+    try:
+        from reportlab.lib import colors
+        from reportlab.lib.enums import TA_LEFT
+        from reportlab.lib.pagesizes import letter, landscape
+        from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+        from reportlab.lib.units import inch
+        from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer, KeepTogether
+    except Exception:
+        return jsonify({'error': 'PDF support is not installed on the server'}), 500
+
+    project_name = str(data.get('project_name') or 'CTCC Oasis')[:120]
+    range_weeks = 6 if int(data.get('range_weeks') or 4) == 6 else 4
+    trade_name = str(data.get('trade_name') or 'All Trades')[:120]
+
+    buf = io.BytesIO()
+    doc = SimpleDocTemplate(
+        buf, pagesize=landscape(letter),
+        rightMargin=0.28*inch, leftMargin=0.28*inch,
+        topMargin=0.35*inch, bottomMargin=0.32*inch,
+        title=f'{project_name} - {range_weeks}-Week Look Ahead',
+        author='Schedule Update',
+    )
+    styles = getSampleStyleSheet()
+    title_style = ParagraphStyle('ExportTitle', parent=styles['Title'], fontName='Helvetica-Bold', fontSize=15, leading=18, textColor=colors.HexColor('#173A63'), spaceAfter=2)
+    meta_style = ParagraphStyle('ExportMeta', parent=styles['Normal'], fontName='Helvetica', fontSize=7.5, leading=9, textColor=colors.HexColor('#52606D'), spaceAfter=6)
+    trade_style = ParagraphStyle('TradeHeader', parent=styles['Heading2'], fontName='Helvetica-Bold', fontSize=10, leading=12, textColor=colors.white, backColor=colors.HexColor('#173A63'), leftIndent=5, spaceBefore=6, spaceAfter=3)
+    cell_style = ParagraphStyle('Cell', parent=styles['Normal'], fontName='Helvetica', fontSize=6.5, leading=8, textColor=colors.HexColor('#172B4D'))
+    small_style = ParagraphStyle('SmallCell', parent=cell_style, fontSize=6.2, leading=7.3)
+    header_style = ParagraphStyle('HeaderCell', parent=cell_style, fontName='Helvetica-Bold', textColor=colors.white, alignment=TA_LEFT)
+
+    story = [
+        Paragraph(f'{project_name} - {range_weeks}-Week Look Ahead', title_style),
+        Paragraph(f'{trade_name} &nbsp;&nbsp;|&nbsp;&nbsp; Generated {datetime.now().strftime("%m/%d/%Y %I:%M %p")} &nbsp;&nbsp;|&nbsp;&nbsp; {len(rows)} activities', meta_style),
+    ]
+
+    groups = {}
+    for row in rows:
+        trade = str(row.get('trade') or 'Unassigned')
+        groups.setdefault(trade, []).append(row)
+
+    for trade in sorted(groups, key=lambda x: x.lower()):
+        story.append(Paragraph(trade, trade_style))
+        table_rows = [[
+            Paragraph('ID / Area', header_style),
+            Paragraph('Activity', header_style),
+            Paragraph('Baseline', header_style),
+            Paragraph('Current', header_style),
+            Paragraph('Status', header_style),
+            Paragraph('Variance', header_style),
+            Paragraph('Notes', header_style),
+        ]]
+        for row in groups[trade]:
+            code = str(row.get('activity_code') or '')
+            area = str(row.get('area') or '')
+            id_area = code + (f'<br/><font color="#52606D">{area}</font>' if area else '')
+            baseline = f'{_pdf_date(row.get("baseline_start"))}<br/>{_pdf_date(row.get("baseline_finish"))}'
+            current = f'{_pdf_date(row.get("current_start"))}<br/>{_pdf_date(row.get("current_finish"))}'
+            status = str(row.get('status') or '')
+            pct = row.get('percent')
+            if status == 'In Progress' and pct is not None:
+                status = f'{status}<br/>{int(pct)}%'
+            notes = str(row.get('notes') or '').replace('&','&amp;').replace('<','&lt;').replace('>','&gt;')
+            name = str(row.get('activity_name') or '').replace('&','&amp;').replace('<','&lt;').replace('>','&gt;')
+            table_rows.append([
+                Paragraph(id_area, small_style),
+                Paragraph(name, cell_style),
+                Paragraph(baseline, small_style),
+                Paragraph(current, small_style),
+                Paragraph(status, small_style),
+                Paragraph(_variance_label(row.get('variance_days')), small_style),
+                Paragraph(notes or '-', small_style),
+            ])
+        col_widths = [0.78*inch, 2.25*inch, 0.92*inch, 0.92*inch, 0.78*inch, 0.75*inch, 3.15*inch]
+        t = Table(table_rows, colWidths=col_widths, repeatRows=1, hAlign='LEFT')
+        t.setStyle(TableStyle([
+            ('BACKGROUND',(0,0),(-1,0),colors.HexColor('#2F5D8C')),
+            ('TEXTCOLOR',(0,0),(-1,0),colors.white),
+            ('VALIGN',(0,0),(-1,-1),'TOP'),
+            ('GRID',(0,0),(-1,-1),0.25,colors.HexColor('#D9E2EC')),
+            ('ROWBACKGROUNDS',(0,1),(-1,-1),[colors.white,colors.HexColor('#F7F9FC')]),
+            ('LEFTPADDING',(0,0),(-1,-1),3),
+            ('RIGHTPADDING',(0,0),(-1,-1),3),
+            ('TOPPADDING',(0,0),(-1,-1),3),
+            ('BOTTOMPADDING',(0,0),(-1,-1),3),
+        ]))
+        story.append(t)
+        story.append(Spacer(1, 0.05*inch))
+
+    def add_page_number(canvas, doc_obj):
+        canvas.saveState()
+        canvas.setFont('Helvetica', 6.5)
+        canvas.setFillColor(colors.HexColor('#6B778C'))
+        canvas.drawRightString(landscape(letter)[0]-0.28*inch, 0.16*inch, f'Page {doc_obj.page}')
+        canvas.restoreState()
+
+    doc.build(story, onFirstPage=add_page_number, onLaterPages=add_page_number)
+    buf.seek(0)
+    safe_trade = ''.join(ch if ch.isalnum() or ch in ('-','_') else '_' for ch in trade_name).strip('_') or 'All_Trades'
+    filename = f'{range_weeks}-Week_Lookahead_{safe_trade}.pdf'
+    return send_file(buf, mimetype='application/pdf', as_attachment=True, download_name=filename, max_age=0)
 
 
 @app.route('/api/account/password-changed', methods=['POST'])

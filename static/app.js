@@ -1060,3 +1060,123 @@ refreshInstallButtons();
   });
   overlay.addEventListener('click',e=>{ if(e.target===overlay) closeCalendar(); });
 })();
+
+// V34 - Look-ahead PDF export
+function workdayVarianceDays(baselineFinish, currentFinish){
+  if(!baselineFinish || !currentFinish) return null;
+  const b=new Date(baselineFinish+'T12:00:00');
+  const c=new Date(currentFinish+'T12:00:00');
+  if(isNaN(b)||isNaN(c)) return null;
+  if(b.getTime()===c.getTime()) return 0;
+  const dir=c>b?1:-1;
+  let n=0;
+  const d=new Date(b);
+  while((dir>0 && d<c) || (dir<0 && d>c)){
+    d.setDate(d.getDate()+dir);
+    const day=d.getDay();
+    if(day!==0 && day!==6) n+=dir;
+  }
+  return n;
+}
+function lookaheadExportRows(rangeWeeks, tradeId=''){
+  const today=new Date(); today.setHours(0,0,0,0);
+  const horizon=new Date(today); horizon.setDate(horizon.getDate()+(Number(rangeWeeks)*7));
+  return activities.filter(a=>{
+    if(isSub() && a.company_id!==profile.company_id) return false;
+    if(tradeId && a.company_id!==tradeId) return false;
+    const startValue=effectiveScheduleStart(a), finishValue=effectiveScheduleFinish(a);
+    const s=startValue?new Date(startValue+'T12:00:00'):null;
+    const f=finishValue?new Date(finishValue+'T12:00:00'):s;
+    if(!s || !f) return false;
+    const overdueNotStarted=a.status==='Not Started' && s<today;
+    const inWindow=s<=horizon && f>=today;
+    return overdueNotStarted || inWindow;
+  }).sort((a,b)=>{
+    if(!tradeId && !isSub()){
+      const tc=companyName(a.company_id).localeCompare(companyName(b.company_id),undefined,{sensitivity:'base'});
+      if(tc!==0) return tc;
+    }
+    return chronologicalSort(a,b);
+  });
+}
+function openLookaheadExport(){
+  const modal=$('exportLookaheadModal'); if(!modal) return;
+  const trade=$('exportTrade');
+  if(trade){
+    const sorted=[...companies].sort((a,b)=>String(a.company_name||'').localeCompare(String(b.company_name||'')));
+    trade.innerHTML='<option value="">All Trades</option>'+sorted.map(c=>`<option value="${c.id}">${esc(c.company_name)}</option>`).join('');
+    if(isSub()){
+      trade.value=profile.company_id||'';
+      trade.disabled=true;
+      $('exportTradeLabel')?.classList.add('hidden');
+    }else{
+      trade.disabled=false;
+      $('exportTradeLabel')?.classList.remove('hidden');
+      const activeTrade=$('tradeFilter')?.value||'';
+      if(activeTrade) trade.value=activeTrade;
+    }
+  }
+  const activeRange=['4','6'].includes(currentRange)?currentRange:'4';
+  if($('exportRange')) $('exportRange').value=activeRange;
+  modal.classList.remove('hidden');
+}
+function closeLookaheadExport(){ $('exportLookaheadModal')?.classList.add('hidden'); }
+$('exportLookaheadBtn')?.addEventListener('click',openLookaheadExport);
+$('closeExportLookaheadModal')?.addEventListener('click',closeLookaheadExport);
+$('exportLookaheadModal')?.addEventListener('click',e=>{ if(e.target?.id==='exportLookaheadModal') closeLookaheadExport(); });
+$('exportLookaheadForm')?.addEventListener('submit',async e=>{
+  e.preventDefault();
+  const btn=$('generateLookaheadPdfBtn');
+  const range=$('exportRange')?.value||'4';
+  const tradeId=isSub()?profile.company_id:($('exportTrade')?.value||'');
+  const rows=lookaheadExportRows(range,tradeId);
+  if(!rows.length){ toast('No activities found for this look-ahead'); return; }
+  const project=projects.find(p=>p.id===selectedProjectId);
+  const tradeName=tradeId?companyName(tradeId):'All Trades';
+  const payload={
+    project_name:project?.project_name||'CTCC Oasis',
+    range_weeks:Number(range),
+    trade_name:tradeName,
+    rows:rows.map(a=>{
+      const variance=workdayVarianceDays(a.original_finish,a.current_finish);
+      return {
+        trade:companyName(a.company_id),
+        activity_code:a.activity_code||'',
+        area:a.area||'',
+        activity_name:a.activity_name||'',
+        baseline_start:a.original_start||'',
+        baseline_finish:a.original_finish||'',
+        current_start:a.current_start||'',
+        current_finish:a.current_finish||'',
+        status:a.status||'',
+        percent:effectivePercent(a),
+        variance_days:variance,
+        notes:a.notes||''
+      };
+    })
+  };
+  try{
+    if(btn){btn.disabled=true;btn.textContent='Generating...';}
+    const token=session?.access_token;
+    const r=await fetch('/api/export/lookahead-pdf',{
+      method:'POST',
+      headers:{'Content-Type':'application/json',...(token?{'Authorization':`Bearer ${token}`}:{})},
+      body:JSON.stringify(payload)
+    });
+    if(!r.ok){
+      let msg='Could not generate PDF';
+      try{const d=await r.json();msg=d.error||msg;}catch(_){ }
+      throw new Error(msg);
+    }
+    const blob=await r.blob();
+    const url=URL.createObjectURL(blob);
+    const a=document.createElement('a');
+    const safeTrade=tradeName.replace(/[^A-Za-z0-9_-]+/g,'_').replace(/^_+|_+$/g,'')||'All_Trades';
+    a.href=url;a.download=`${range}-Week_Lookahead_${safeTrade}.pdf`;
+    document.body.appendChild(a);a.click();a.remove();
+    setTimeout(()=>URL.revokeObjectURL(url),1500);
+    closeLookaheadExport();
+    toast('Look-ahead PDF downloaded');
+  }catch(err){ toast(err.message||'Could not generate PDF'); }
+  finally{ if(btn){btn.disabled=false;btn.textContent='Generate PDF';} }
+});
