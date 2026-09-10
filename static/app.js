@@ -284,8 +284,28 @@ async function loadActivities(){
   activities=data||[]; renderActivities(); renderAdminActivities();
 }
 
-function effectiveScheduleStart(a){ return a.current_start || a.original_start || null; }
-function effectiveScheduleFinish(a){ return a.current_finish || a.original_finish || effectiveScheduleStart(a); }
+function effectiveScheduleStart(a){
+  if(!a) return null;
+  if(a.current_start) return a.current_start;
+  // If only a current finish exists, derive the current start from the activity duration.
+  if(a.current_finish){
+    const derived=startFromFinishAndDuration(a.current_finish, baselineDuration(a));
+    if(derived) return derived;
+  }
+  return a.original_start || null;
+}
+function effectiveScheduleFinish(a){
+  if(!a) return null;
+  if(a.current_finish) return a.current_finish;
+  // If a current start exists but finish is blank, derive finish from current start + duration.
+  // Do not mix a live current start with an older baseline finish.
+  if(a.current_start){
+    const derived=finishFromStartAndDuration(a.current_start, baselineDuration(a));
+    if(derived) return derived;
+    return a.current_start;
+  }
+  return a.original_finish || effectiveScheduleStart(a);
+}
 function scheduleDateValue(v){ return v ? new Date(v+'T12:00:00').getTime() : Number.POSITIVE_INFINITY; }
 function chronologicalSort(a,b){
   const s=scheduleDateValue(effectiveScheduleStart(a))-scheduleDateValue(effectiveScheduleStart(b));
