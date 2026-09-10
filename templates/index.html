@@ -161,51 +161,106 @@
         </section>
 
         <section id="adminView" class="view hidden">
-          <div class="page-head"><div><h2>Admin</h2><p class="muted">Projects, trades, users, and schedule imports.</p></div></div>
-          <div class="admin-grid">
-            <div class="card gc-admin-only">
-              <h3>Projects</h3>
-              <form id="projectForm" class="stack"><input id="newProjectName" placeholder="Project name" required><button class="primary">Add Project</button></form>
-              <div id="projectList" class="mini-list"></div>
+          <div class="page-head admin-page-head">
+            <div><h2>Admin</h2><p class="muted">Manage users, trades, activities, imports, and project settings.</p></div>
+          </div>
+
+          <div class="admin-summary" id="adminSummary">
+            <button class="admin-summary-card" type="button" data-admin-tab-jump="users"><span>Active Users</span><strong id="adminActiveUsersCount">0</strong><small id="adminInactiveUsersCount">0 inactive</small></button>
+            <button class="admin-summary-card" type="button" data-admin-tab-jump="trades"><span>Companies / Trades</span><strong id="adminCompaniesCount">0</strong><small>Assigned companies</small></button>
+            <button class="admin-summary-card" type="button" data-admin-tab-jump="activities"><span>Activities</span><strong id="adminActivitiesCount">0</strong><small id="adminUnassignedCount">0 unassigned</small></button>
+            <button class="admin-summary-card" type="button" data-admin-tab-jump="import"><span>Schedule Import</span><strong>Import</strong><small>Excel / CSV</small></button>
+          </div>
+
+          <div class="admin-tabs" role="tablist" aria-label="Admin sections">
+            <button class="admin-tab active" type="button" data-admin-tab="overview">Overview</button>
+            <button class="admin-tab gc-admin-only" type="button" data-admin-tab="users">Users</button>
+            <button class="admin-tab gc-admin-only" type="button" data-admin-tab="trades">Trades</button>
+            <button class="admin-tab activity-admin-only" type="button" data-admin-tab="activities">Activities</button>
+            <button class="admin-tab activity-admin-only" type="button" data-admin-tab="import">Import</button>
+            <button class="admin-tab" type="button" data-admin-tab="settings">Settings</button>
+          </div>
+
+          <div class="admin-tab-panel" data-admin-panel="overview">
+            <div class="admin-home-grid">
+              <button class="admin-home-card gc-admin-only" type="button" data-admin-tab-jump="users"><div class="admin-home-icon">👥</div><div><h3>Users & Foremen</h3><p>Manage users, roles, companies, passwords, and active status.</p><span id="adminOverviewUsers">0 active users</span></div><b>›</b></button>
+              <button class="admin-home-card gc-admin-only" type="button" data-admin-tab-jump="trades"><div class="admin-home-icon">🏗</div><div><h3>Companies & Trades</h3><p>Manage subcontractor companies and trade assignments.</p><span id="adminOverviewCompanies">0 companies</span></div><b>›</b></button>
+              <button class="admin-home-card activity-admin-only" type="button" data-admin-tab-jump="activities"><div class="admin-home-icon">▤</div><div><h3>Activities</h3><p>Search, edit, reassign, add, or delete schedule activities.</p><span id="adminOverviewActivities">0 activities</span></div><b>›</b></button>
+              <button class="admin-home-card activity-admin-only" type="button" data-admin-tab-jump="import"><div class="admin-home-icon">⇧</div><div><h3>Schedule Import</h3><p>Upload the latest remaining schedule from Excel or CSV.</p><span>Import schedule data</span></div><b>›</b></button>
+              <button class="admin-home-card" type="button" data-admin-tab-jump="settings"><div class="admin-home-icon">⚙</div><div><h3>Project Settings</h3><p>Projects, foreman email tools, and project-level controls.</p><span id="adminOverviewProject">Current project</span></div><b>›</b></button>
+              <button class="admin-home-card" type="button" id="adminHistoryShortcut"><div class="admin-home-icon">↻</div><div><h3>Audit & History</h3><p>Review meaningful subcontractor schedule changes.</p><span>Open Change History</span></div><b>›</b></button>
             </div>
-            <div class="card gc-admin-only collapsible-card" id="companiesTradesCard">
-              <button id="companiesTradesToggle" class="card-collapse-toggle" type="button" aria-expanded="true" aria-controls="companiesTradesBody">
-                <span class="card-collapse-arrow">▼</span>
-                <span class="card-collapse-title">Companies / Trades</span>
-                <span id="companiesTradesCount" class="card-collapse-count">0 companies</span>
-              </button>
-              <div id="companiesTradesBody" class="collapsible-card-body">
-                <form id="companyForm" class="stack"><input id="newCompanyName" placeholder="Company name" required><input id="newTradeName" placeholder="Trade (optional)"><button class="primary">Add Company</button></form>
-                <div id="companyList" class="mini-list"></div>
-              </div>
+          </div>
+
+          <div class="admin-tab-panel hidden" data-admin-panel="users">
+            <div class="card span-2 gc-admin-only admin-section-card">
+              <div class="admin-section-head"><div><h3>Users & Foremen</h3><p class="muted small">Create users and manage access without scrolling through unrelated admin tools.</p></div></div>
+              <details class="admin-create-box"><summary>+ Create New User</summary>
+                <form id="userForm" class="user-grid admin-create-form">
+                  <input id="userName" placeholder="Full name" required>
+                  <input id="userEmail" type="email" placeholder="Email" required>
+                  <input id="userPassword" type="password" minlength="8" placeholder="Temporary password (8+)" required>
+                  <select id="userRole"><option value="sub">Subcontractor</option><option value="gc">GC</option><option value="gc_admin">GC Admin</option></select>
+                  <select id="userCompany"><option value="">Select company</option></select>
+                  <button class="primary">Create User</button>
+                </form>
+              </details>
+              <div class="admin-filter-row"><input id="adminUserSearch" type="search" placeholder="Search name, email, company, or role"></div>
+              <div class="table-wrap inner"><table><thead><tr><th>Name</th><th>Email</th><th>Role</th><th>Company</th><th>Active</th><th>Actions</th></tr></thead><tbody id="userBody"></tbody></table></div>
             </div>
-            <div class="card span-2 activity-admin-only">
-              <h3>Upload Remaining Schedule</h3>
-              <p class="muted small">Excel or CSV. Recommended columns: Activity ID, Activity Name, Start, Finish, Duration, Trade/Company, Area.</p>
-              <div class="upload-row"><input id="scheduleFile" type="file" accept=".xlsx,.xls,.csv"><button id="uploadBtn" class="primary" type="button">Import Schedule</button></div>
-              <div id="uploadResult" class="small"></div>
+          </div>
+
+          <div class="admin-tab-panel hidden" data-admin-panel="trades">
+            <div class="card span-2 gc-admin-only admin-section-card" id="companiesTradesCard">
+              <div class="admin-section-head"><div><h3>Companies / Trades</h3><p class="muted small">Manage subcontractor companies and trade labels.</p></div><span id="companiesTradesCount" class="admin-count-pill">0 companies</span></div>
+              <details class="admin-create-box"><summary>+ Add Company / Trade</summary>
+                <form id="companyForm" class="stack admin-create-form"><input id="newCompanyName" placeholder="Company name" required><input id="newTradeName" placeholder="Trade (optional)"><button class="primary">Add Company</button></form>
+              </details>
+              <div id="companyList" class="mini-list admin-company-list"></div>
             </div>
-            <div class="card span-2 activity-admin-only">
+          </div>
+
+          <div class="admin-tab-panel hidden" data-admin-panel="activities">
+            <div class="card span-2 activity-admin-only admin-section-card">
               <div class="page-head compact"><div><h3>Activity Management</h3><p class="muted small">Only your Activity Admin account can add, edit, reassign, or delete schedule activities.</p></div><div class="activity-admin-actions"><button id="collapseAllAreasBtn" class="ghost" type="button">Collapse All</button><button id="expandAllAreasBtn" class="ghost" type="button">Expand All</button><button id="addActivityBtn" class="primary" type="button">Add Activity</button></div></div>
+              <div class="admin-activity-filters">
+                <input id="adminActivitySearch" type="search" placeholder="Search Activity ID or name">
+                <select id="adminActivityAreaFilter"><option value="">All Areas</option></select>
+                <select id="adminActivityTradeFilter"><option value="">All Trades</option></select>
+                <select id="adminActivityStatusFilter"><option value="">All Statuses</option><option>Not Started</option><option>Starting Soon</option><option>In Progress</option><option>Complete</option><option>Delayed</option><option>On Hold</option></select>
+                <button id="clearAdminActivityFilters" class="ghost" type="button">Clear</button>
+              </div>
+              <div class="admin-result-line"><span id="adminActivityResultCount">0 activities</span></div>
               <div class="table-wrap inner"><table><thead><tr><th>Activity ID</th><th>Activity</th><th>Trade</th><th>Area</th><th>Baseline Start</th><th>Baseline Finish</th><th></th></tr></thead><tbody id="adminActivityBody"></tbody></table></div>
             </div>
-            <div class="card span-2 gc-admin-only">
-              <h3>Foreman Update Email</h3>
-              <p class="muted small">Email all active subcontractor users and ask them to review the 4-Week Look Ahead, update started/completed activities, and report incorrect trade assignments.</p>
-              <button id="emailForemenBtn" class="primary" type="button">Email Active Foremen</button>
-              <p id="emailForemenStatus" class="muted small"></p>
+          </div>
+
+          <div class="admin-tab-panel hidden" data-admin-panel="import">
+            <div class="card span-2 activity-admin-only admin-section-card">
+              <div class="admin-section-head"><div><h3>Upload Remaining Schedule</h3><p class="muted small">Excel or CSV. Recommended columns: Activity ID, Activity Name, Start, Finish, Duration, Trade/Company, Area.</p></div></div>
+              <div class="admin-import-drop"><input id="scheduleFile" type="file" accept=".xlsx,.xls,.csv"><button id="uploadBtn" class="primary" type="button">Import Schedule</button></div>
+              <div id="uploadResult" class="small"></div>
             </div>
-            <div class="card span-2 gc-admin-only">
-              <h3>User Management</h3>
-              <form id="userForm" class="user-grid">
-                <input id="userName" placeholder="Full name" required>
-                <input id="userEmail" type="email" placeholder="Email" required>
-                <input id="userPassword" type="password" minlength="8" placeholder="Temporary password (8+)" required>
-                <select id="userRole"><option value="sub">Subcontractor</option><option value="gc">GC</option><option value="gc_admin">GC Admin</option></select>
-                <select id="userCompany"><option value="">Select company</option></select>
-                <button class="primary">Create User</button>
-              </form>
-              <div class="table-wrap inner"><table><thead><tr><th>Name</th><th>Email</th><th>Role</th><th>Company</th><th>Active</th><th>Actions</th></tr></thead><tbody id="userBody"></tbody></table></div>
+          </div>
+
+          <div class="admin-tab-panel hidden" data-admin-panel="settings">
+            <div class="admin-grid admin-settings-grid">
+              <div class="card gc-admin-only">
+                <h3>Projects</h3>
+                <form id="projectForm" class="stack"><input id="newProjectName" placeholder="Project name" required><button class="primary">Add Project</button></form>
+                <div id="projectList" class="mini-list"></div>
+              </div>
+              <div class="card gc-admin-only">
+                <h3>Foreman Update Email</h3>
+                <p class="muted small">Email all active subcontractor users and ask them to review the 4-Week Look Ahead, update started/completed activities, and report incorrect trade assignments.</p>
+                <button id="emailForemenBtn" class="primary" type="button">Email Active Foremen</button>
+                <p id="emailForemenStatus" class="muted small"></p>
+              </div>
+              <div class="card activity-admin-only">
+                <h3>Schedule Tools</h3>
+                <p class="muted small">Use the Activities tab for activity edits and the Import tab for schedule updates.</p>
+                <div class="stack"><button class="ghost" type="button" data-admin-tab-jump="activities">Open Activity Management</button><button class="ghost" type="button" data-admin-tab-jump="import">Open Schedule Import</button></div>
+              </div>
             </div>
           </div>
         </section>

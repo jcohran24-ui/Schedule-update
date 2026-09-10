@@ -231,7 +231,7 @@ async function loadReferenceData(){
   let {data:pr}=await sb.from('projects').select('*').order('project_name'); projects=pr||[];
   let {data:co}=await sb.from('companies').select('*').order('company_name'); companies=co||[];
   if(isGC()){ let {data:pf}=await sb.from('profiles').select('*').order('full_name'); profiles=pf||[]; }
-  renderProjectOptions(); renderCompanies(); renderUsers(); renderAdminActivities();
+  renderProjectOptions(); renderCompanies(); renderUsers(); renderAdminActivities(); updateAdminSummary();
   if(!selectedProjectId && projects.length) selectedProjectId=projects[0].id;
   if(selectedProjectId) $('projectSelect').value=selectedProjectId;
   updateProjectLabel();
@@ -267,18 +267,69 @@ function initCompaniesTradesCollapse(){
 }
 function renderUsers(){
   if(!isAdmin() || !$('userBody')) return;
-  $('userBody').innerHTML=profiles.map(p=>{
+  const q=String($('adminUserSearch')?.value||'').trim().toLowerCase();
+  const shown=profiles.filter(p=>{
+    if(!q) return true;
+    const hay=[p.full_name,p.email,p.role,companyName(p.company_id)].map(x=>String(x||'').toLowerCase()).join(' ');
+    return hay.includes(q);
+  });
+  $('userBody').innerHTML=shown.map(p=>{
     const protectedUser = p.id===profile?.id || p.is_activity_admin===true;
     const deleteButton = protectedUser
       ? '<button class="danger" type="button" disabled title="This admin account is protected">Delete</button>'
       : `<button class="danger delete-user" type="button" data-id="${p.id}">Delete</button>`;
     return `<tr><td>${esc(p.full_name||'')}</td><td>${esc(p.email||'')}</td><td>${esc(p.role)}</td><td>${esc(companyName(p.company_id))}</td><td>${p.active?'Yes':'No'}</td><td class="user-actions"><button class="ghost set-password" data-id="${p.id}">Set Password</button> <button class="ghost toggle-user" data-id="${p.id}" data-active="${p.active}">${p.active?'Deactivate':'Activate'}</button> ${deleteButton}</td></tr>`;
   }).join('');
+  if(!shown.length) $('userBody').innerHTML='<tr><td colspan="6" class="muted">No users match this search.</td></tr>';
   document.querySelectorAll('.toggle-user').forEach(b=>b.onclick=()=>toggleUser(b.dataset.id,b.dataset.active!=='true'));
   document.querySelectorAll('.set-password').forEach(b=>b.onclick=()=>openPasswordModal(b.dataset.id));
   document.querySelectorAll('.delete-user').forEach(b=>b.onclick=()=>deleteUser(b.dataset.id));
 }
-function updateProjectLabel(){ const p=projects.find(x=>x.id===selectedProjectId); $('projectLabel').textContent=p?.project_name||'No project selected'; $('scheduleSubtitle').textContent=profile?.role==='sub' ? companyName(profile.company_id) : 'Live subcontractor updates'; }
+
+function updateAdminSummary(){
+  const activeUsers=profiles.filter(p=>p.active).length;
+  const inactiveUsers=profiles.filter(p=>!p.active).length;
+  const projectActs=selectedProjectId ? activities.filter(a=>a.project_id===selectedProjectId || !a.project_id) : activities;
+  const unassigned=projectActs.filter(a=>!a.company_id).length;
+  if($('adminActiveUsersCount')) $('adminActiveUsersCount').textContent=activeUsers;
+  if($('adminInactiveUsersCount')) $('adminInactiveUsersCount').textContent=`${inactiveUsers} inactive`;
+  if($('adminCompaniesCount')) $('adminCompaniesCount').textContent=companies.length;
+  if($('adminActivitiesCount')) $('adminActivitiesCount').textContent=projectActs.length;
+  if($('adminUnassignedCount')) $('adminUnassignedCount').textContent=`${unassigned} unassigned`;
+  if($('adminOverviewUsers')) $('adminOverviewUsers').textContent=`${activeUsers} active ${activeUsers===1?'user':'users'}`;
+  if($('adminOverviewCompanies')) $('adminOverviewCompanies').textContent=`${companies.length} ${companies.length===1?'company':'companies'}`;
+  if($('adminOverviewActivities')) $('adminOverviewActivities').textContent=`${projectActs.length} activities • ${unassigned} unassigned`;
+  if($('adminOverviewProject')){
+    const p=projects.find(x=>x.id===selectedProjectId);
+    $('adminOverviewProject').textContent=p?.project_name||'No project selected';
+  }
+}
+
+let activeAdminTab='overview';
+function setAdminTab(tab){
+  const btn=[...document.querySelectorAll('.admin-tab')].find(b=>b.dataset.adminTab===tab && !b.classList.contains('hidden'));
+  if(!btn) tab='overview';
+  activeAdminTab=tab;
+  document.querySelectorAll('.admin-tab').forEach(b=>b.classList.toggle('active',b.dataset.adminTab===tab));
+  document.querySelectorAll('.admin-tab-panel').forEach(p=>p.classList.toggle('hidden',p.dataset.adminPanel!==tab));
+  try{localStorage.setItem('adminActiveTab',tab);}catch(e){}
+  if(tab==='activities') renderAdminActivities();
+  if(tab==='users') renderUsers();
+  updateAdminSummary();
+}
+function initAdminTabs(){
+  document.querySelectorAll('.admin-tab').forEach(b=>b.addEventListener('click',()=>setAdminTab(b.dataset.adminTab)));
+  document.querySelectorAll('[data-admin-tab-jump]').forEach(b=>b.addEventListener('click',()=>setAdminTab(b.dataset.adminTabJump)));
+  $('adminHistoryShortcut')?.addEventListener('click',async()=>{
+    document.querySelector('.nav-btn[data-view="history"]')?.click();
+  });
+  $('adminUserSearch')?.addEventListener('input',renderUsers);
+  let saved='overview'; try{saved=localStorage.getItem('adminActiveTab')||'overview';}catch(e){}
+  setAdminTab(saved);
+}
+
+function updateProjectLabel(){ const p=projects.find(x=>x.id===selectedProjectId); $('projectLabel').textContent=p?.project_name||'No project selected'; $('scheduleSubtitle').textContent=profile?.role==='sub' ? companyName(profile.company_id) : 'Live subcontractor updates'; updateAdminSummary(); }
+
 
 $('projectSelect')?.addEventListener('change',async e=>{selectedProjectId=e.target.value;updateProjectLabel();await loadActivities();});
 $('refreshBtn')?.addEventListener('click',async()=>{await loadReferenceData();await loadActivities();toast('Schedule refreshed');});
@@ -315,7 +366,7 @@ async function loadActivities(){
   if(error){toast(error.message);return;}
   activities=data||[];
   await loadSubChangedActivityIds();
-  renderActivities(); renderAdminActivities();
+  renderActivities(); renderAdminActivities(); updateAdminSummary();
 }
 
 function effectiveScheduleStart(a){
@@ -737,14 +788,47 @@ function adminAreaLabel(a){
   const m=name.match(/^\*{0,2}\s*(MU|FP|GL|EV|SD|A[1-9]|F)(?:\s*[-–—]|\s|$)/i);
   return m ? m[1].toUpperCase() : 'Other / No Area';
 }
+function populateAdminActivityFilters(){
+  if($('adminActivityAreaFilter')){
+    const current=$('adminActivityAreaFilter').value;
+    $('adminActivityAreaFilter').innerHTML='<option value="">All Areas</option>'+adminAreaNames().map(a=>`<option value="${esc(a)}">${esc(a)}</option>`).join('');
+    $('adminActivityAreaFilter').value=current;
+  }
+  if($('adminActivityTradeFilter')){
+    const current=$('adminActivityTradeFilter').value;
+    $('adminActivityTradeFilter').innerHTML='<option value="">All Trades</option>'+companies.map(c=>`<option value="${c.id}">${esc(c.company_name)}</option>`).join('')+'<option value="__unassigned">Unassigned / GC</option>';
+    $('adminActivityTradeFilter').value=current;
+  }
+}
+function filteredAdminActivities(){
+  const q=String($('adminActivitySearch')?.value||'').trim().toLowerCase();
+  const area=$('adminActivityAreaFilter')?.value||'';
+  const trade=$('adminActivityTradeFilter')?.value||'';
+  const status=$('adminActivityStatusFilter')?.value||'';
+  return activities.filter(a=>{
+    if(q && !`${a.activity_code||''} ${a.activity_name||''}`.toLowerCase().includes(q)) return false;
+    if(area && adminAreaLabel(a)!==area) return false;
+    if(trade==='__unassigned' && a.company_id) return false;
+    if(trade && trade!=='__unassigned' && a.company_id!==trade) return false;
+    if(status && a.status!==status) return false;
+    return true;
+  });
+}
 function renderAdminActivities(){
   if(!isActivityAdmin() || !$('adminActivityBody')) return;
+  populateAdminActivityFilters();
+  const shown=filteredAdminActivities();
+  if($('adminActivityResultCount')) $('adminActivityResultCount').textContent=`${shown.length} ${shown.length===1?'activity':'activities'} shown`;
   const grouped={};
-  activities.forEach(a=>{
+  shown.forEach(a=>{
     const area=adminAreaLabel(a);
     (grouped[area] ||= []).push(a);
   });
   const orderedAreas=Object.keys(grouped).sort((a,b)=>a.localeCompare(b,undefined,{numeric:true,sensitivity:'base'}));
+  if(!orderedAreas.length){
+    $('adminActivityBody').innerHTML='<tr><td colspan="7" class="muted">No activities match these filters.</td></tr>';
+    return;
+  }
   $('adminActivityBody').innerHTML=orderedAreas.map((area,idx)=>{
     const key=encodeURIComponent(area);
     const collapsed=collapsedAdminAreas.has(area);
@@ -763,9 +847,15 @@ function renderAdminActivities(){
   document.querySelectorAll('.admin-edit-act').forEach(b=>b.onclick=()=>{const a=activities.find(x=>x.id===b.dataset.id);if(a)openAdminActivity(a);});
   document.querySelectorAll('.admin-delete-act').forEach(b=>b.onclick=()=>deleteActivity(b.dataset.id));
 }
+['adminActivitySearch','adminActivityAreaFilter','adminActivityTradeFilter','adminActivityStatusFilter'].forEach(id=>$(id)?.addEventListener(id==='adminActivitySearch'?'input':'change',renderAdminActivities));
+$('clearAdminActivityFilters')?.addEventListener('click',()=>{
+  ['adminActivitySearch','adminActivityAreaFilter','adminActivityTradeFilter','adminActivityStatusFilter'].forEach(id=>{if($(id)) $(id).value='';});
+  renderAdminActivities();
+});
 $('collapseAllAreasBtn')?.addEventListener('click',collapseAllAdminAreas);
 $('expandAllAreasBtn')?.addEventListener('click',expandAllAdminAreas);
 initCompaniesTradesCollapse();
+initAdminTabs();
 function populateAdminCompanySelect(selected=''){
   if(!$('adminActivityCompany')) return;
   $('adminActivityCompany').innerHTML='<option value="">Unassigned / GC</option>'+companies.map(c=>`<option value="${c.id}">${esc(c.company_name)}</option>`).join('');

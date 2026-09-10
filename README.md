@@ -248,3 +248,13 @@ When an activity has a Current Start but no Current Finish, lookahead filtering 
 - Finish variance uses Monday-Friday workdays and compares Current Finish to Baseline Finish.
 - Added ReportLab to requirements.txt for server-side PDF generation.
 - No Supabase migration required.
+
+## V35 Admin Control Center
+- Reorganized Admin into Overview, Users, Trades, Activities, Import, and Settings tabs.
+- Added dashboard summary cards for active users, companies/trades, activities, and unassigned activities.
+- Added compact action cards on the Admin Overview screen.
+- Added user search.
+- Added Activity Management search and filters for Activity ID/name, area, trade, and status.
+- Moved user/company creation forms into expandable create panels.
+- Preserved existing permissions: GC Admin user/company/project controls and Activity Admin activity/import controls.
+- No database migration required.
