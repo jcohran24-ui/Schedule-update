@@ -185,3 +185,33 @@ Run `foreman_review_mode_migration.sql` once in Supabase SQL Editor before using
 
 ## V21 — Automatic subcontractor percent complete
 Subcontractors can no longer type Percent Complete. The foreman review screen displays a read-only percentage calculated from the activity Current Start date and Duration using Monday-Friday workdays. Not Started = 0%, Complete = 100%, and active work is capped at 99% until marked Complete. GC/Admin percent controls remain available. No database migration is required for this change.
+
+## V22 GC / GC Admin Mobile Experience
+- Adds a mobile field dashboard for GC and GC Admin users.
+- Adds mobile activity cards, Needs Attention, Past Due/In Progress/Issues summary, sticky filters, and bottom navigation.
+- Keeps the full desktop schedule table on larger screens.
+- Activity Admin gets a full-screen mobile activity editor.
+- Admin tools stack into phone-friendly sections.
+- No Supabase migration is required for V22.
+
+
+
+## V23 - Filter-aware GC dashboard stats
+GC and GC Admin mobile dashboard counters for Remaining, Past Due, In Progress, and Issues now recalculate from the currently filtered activity list (range, trade, status, and search).
+
+## V24 current-date lookahead fix
+When an activity has a Current Start but no Current Finish, lookahead filtering and chronological sorting now calculate the effective finish from Current Start + activity duration (workdays). When only Current Finish exists, the effective start is calculated backwards from the duration. This prevents active work from disappearing from subcontractor or GC mobile dashboards when one current date is blank.
+
+
+
+## V25 - Current-span percent complete
+- Auto percent now uses Current Start through Current Finish when both are present.
+- If Current Finish is blank, it falls back to the activity duration.
+- In Progress remains capped at 99% until marked Complete.
+
+
+## V30 - Restore native mobile date picker
+- Restored the native phone/browser date picker used before V26.
+- Removes the custom in-app calendar and extra Clear buttons.
+- On devices whose native picker provides Clear, that Clear option is available again in the calendar popup.
+- Keeps all V25 dashboard, filter, date fallback, and current-span percent-complete logic.
