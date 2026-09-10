@@ -215,3 +215,11 @@ When an activity has a Current Start but no Current Finish, lookahead filtering 
 - Removes the custom in-app calendar and extra Clear buttons.
 - On devices whose native picker provides Clear, that Clear option is available again in the calendar popup.
 - Keeps all V25 dashboard, filter, date fallback, and current-span percent-complete logic.
+
+
+## V31 - Guaranteed mobile calendar Clear
+- Current Start/Finish use an in-app calendar on mobile/touch devices.
+- Calendar footer always shows Clear, Cancel, and OK.
+- Clear is no longer dependent on Android/iOS native date-picker UI.
+- Desktop keeps the native date input.
+- Service-worker cache bumped to v31.

@@ -225,7 +225,7 @@
       <div class="baseline-box sub-baseline-box"><span>Baseline (Planned)</span><strong id="baselineDates"></strong></div>
       <form id="editForm" class="stack">
         <input id="editId" type="hidden">
-        <div class="two-col"><label>Current Start<input id="editStart" type="date"></label><label>Current Finish<input id="editFinish" type="date"></label></div>
+        <div class="two-col"><label>Current Start<div class="date-field-wrap"><input id="editStart" type="date" data-popup-calendar></div></label><label>Current Finish<div class="date-field-wrap"><input id="editFinish" type="date" data-popup-calendar></div></label></div>
         <div class="sub-status-buttons" aria-label="Status">
           <button type="button" class="sub-status-btn" data-quick-status="Not Started">Not Started</button>
           <button type="button" class="sub-status-btn started" data-quick-status="In Progress">Started</button>
@@ -265,7 +265,7 @@
         <label>Activity Name<input id="adminActivityName" required></label>
         <div class="two-col"><label>Area<input id="adminActivityArea"></label><label>Duration (workdays)<input id="adminDuration" type="number" min="0"></label></div>
         <div class="two-col"><label>Baseline Start<input id="adminBaselineStart" type="date"></label><label>Baseline Finish<input id="adminBaselineFinish" type="date"></label></div>
-        <div class="two-col"><label>Current Start<input id="adminCurrentStart" type="date"></label><label>Current Finish<input id="adminCurrentFinish" type="date"></label></div>
+        <div class="two-col"><label>Current Start<div class="date-field-wrap"><input id="adminCurrentStart" type="date" data-popup-calendar></div></label><label>Current Finish<div class="date-field-wrap"><input id="adminCurrentFinish" type="date" data-popup-calendar></div></label></div>
         <div class="two-col"><label>Status<select id="adminStatus"><option>Not Started</option><option>Starting Soon</option><option>In Progress</option><option>Complete</option><option>Delayed</option><option>On Hold</option></select></label><label>Percent Complete<input id="adminPercent" type="number" min="0" max="100"><span id="adminPercentAutoNote" class="muted small"></span></label></div><label class="checkbox-row"><input id="adminAutoPercent" type="checkbox" checked> Auto-calculate percent from elapsed workdays while In Progress</label>
         <label>Notes<textarea id="adminNotes" rows="4"></textarea></label>
         <button class="primary">Save Activity</button>
