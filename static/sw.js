@@ -1,4 +1,4 @@
-const CACHE_NAME = 'trade-schedule-v18';
+const CACHE_NAME = 'trade-schedule-v30';
 const APP_SHELL = [
   '/',
   '/static/styles.css',
