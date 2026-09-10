@@ -283,17 +283,29 @@ function updateProjectLabel(){ const p=projects.find(x=>x.id===selectedProjectId
 $('projectSelect')?.addEventListener('change',async e=>{selectedProjectId=e.target.value;updateProjectLabel();await loadActivities();});
 $('refreshBtn')?.addEventListener('click',async()=>{await loadReferenceData();await loadActivities();toast('Schedule refreshed');});
 
+function isMeaningfulHistoryChange(h){
+  if(!h) return false;
+  const dateOrStatusChanged =
+    h.old_start !== h.new_start ||
+    h.old_finish !== h.new_finish ||
+    h.old_status !== h.new_status ||
+    h.old_percent !== h.new_percent;
+  const hasComment = String(h.comment || '').trim().length > 0;
+  return dateOrStatusChanged || hasComment;
+}
+
 async function loadSubChangedActivityIds(){
   subChangedActivityIds = new Set();
   if(!isGC() || !activities.length) return;
   const ids=activities.map(a=>a.id);
   const subUserIds=new Set(profiles.filter(p=>p.role==='sub').map(p=>p.id));
   if(!subUserIds.size) return;
-  // Pull the audit records for the current project's activities and mark only
-  // activities that were actually changed by a subcontractor user.
-  const {data,error}=await sb.from('activity_history').select('activity_id,changed_by').in('activity_id',ids);
+  // Only mark activities with a meaningful audit record made by a subcontractor.
+  const {data,error}=await sb.from('activity_history').select('*').in('activity_id',ids);
   if(error){ console.warn('Could not load subcontractor change history:',error.message); return; }
-  (data||[]).forEach(h=>{ if(subUserIds.has(h.changed_by)) subChangedActivityIds.add(h.activity_id); });
+  (data||[]).forEach(h=>{
+    if(subUserIds.has(h.changed_by) && isMeaningfulHistoryChange(h)) subChangedActivityIds.add(h.activity_id);
+  });
 }
 
 async function loadActivities(){
@@ -616,9 +628,12 @@ document.querySelectorAll('.nav-btn').forEach(b=>b.addEventListener('click',asyn
 async function loadHistory(){
   if(!selectedProjectId)return;
   const ids=activities.map(a=>a.id); if(!ids.length){$('historyBody').innerHTML='';return;}
-  const {data,error}=await sb.from('activity_history').select('*').in('activity_id',ids).order('changed_at',{ascending:false}).limit(250);
+  const subUserIds=new Set(profiles.filter(p=>p.role==='sub').map(p=>p.id));
+  if(!subUserIds.size){$('historyBody').innerHTML='';return;}
+  const {data,error}=await sb.from('activity_history').select('*').in('activity_id',ids).order('changed_at',{ascending:false}).limit(500);
   if(error){toast(error.message);return;}
-  $('historyBody').innerHTML=(data||[]).map(h=>{const a=activities.find(x=>x.id===h.activity_id);return `<tr><td>${new Date(h.changed_at).toLocaleString()}</td><td>${esc(a?.activity_code||'')}</td><td>${esc(profileName(h.changed_by))}</td><td>${fmt(h.old_start)} → ${fmt(h.new_start)}</td><td>${fmt(h.old_finish)} → ${fmt(h.new_finish)}</td><td>${esc(h.old_status||'')} → ${esc(h.new_status||'')}</td><td>${esc(h.comment||'')}</td></tr>`}).join('');
+  const rows=(data||[]).filter(h=>subUserIds.has(h.changed_by) && isMeaningfulHistoryChange(h)).slice(0,250);
+  $('historyBody').innerHTML=rows.map(h=>{const a=activities.find(x=>x.id===h.activity_id);return `<tr><td>${new Date(h.changed_at).toLocaleString()}</td><td>${esc(a?.activity_code||'')}</td><td>${esc(profileName(h.changed_by))}</td><td>${fmt(h.old_start)} → ${fmt(h.new_start)}</td><td>${fmt(h.old_finish)} → ${fmt(h.new_finish)}</td><td>${esc(h.old_status||'')} → ${esc(h.new_status||'')}</td><td>${esc(h.comment||'')}</td></tr>`}).join('');
 }
 
 $('projectForm')?.addEventListener('submit',async e=>{e.preventDefault();const name=$('newProjectName').value.trim();if(!name)return;const {error}=await sb.from('projects').insert({project_name:name});if(error){toast(error.message);return;}$('newProjectName').value='';toast('Project added');await loadReferenceData();});
