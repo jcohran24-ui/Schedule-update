@@ -14,6 +14,7 @@ let currentRange = 'all';
 let subStatusFilter = '';
 let saveAndNextRequested = false;
 let gcMobileIssuesOnly = false;
+let subChangedActivityIds = new Set();
 
 const $ = (id) => document.getElementById(id);
 const fmt = (d) => d ? new Date(d + 'T12:00:00').toLocaleDateString() : '—';
@@ -282,12 +283,27 @@ function updateProjectLabel(){ const p=projects.find(x=>x.id===selectedProjectId
 $('projectSelect')?.addEventListener('change',async e=>{selectedProjectId=e.target.value;updateProjectLabel();await loadActivities();});
 $('refreshBtn')?.addEventListener('click',async()=>{await loadReferenceData();await loadActivities();toast('Schedule refreshed');});
 
+async function loadSubChangedActivityIds(){
+  subChangedActivityIds = new Set();
+  if(!isGC() || !activities.length) return;
+  const ids=activities.map(a=>a.id);
+  const subUserIds=new Set(profiles.filter(p=>p.role==='sub').map(p=>p.id));
+  if(!subUserIds.size) return;
+  // Pull the audit records for the current project's activities and mark only
+  // activities that were actually changed by a subcontractor user.
+  const {data,error}=await sb.from('activity_history').select('activity_id,changed_by').in('activity_id',ids);
+  if(error){ console.warn('Could not load subcontractor change history:',error.message); return; }
+  (data||[]).forEach(h=>{ if(subUserIds.has(h.changed_by)) subChangedActivityIds.add(h.activity_id); });
+}
+
 async function loadActivities(){
-  if(!selectedProjectId){ activities=[];renderActivities();return; }
+  if(!selectedProjectId){ activities=[];subChangedActivityIds=new Set();renderActivities();return; }
   let q=sb.from('activities').select('*').eq('project_id',selectedProjectId).order('current_start',{ascending:true,nullsFirst:false});
   const {data,error}=await q;
   if(error){toast(error.message);return;}
-  activities=data||[]; renderActivities(); renderAdminActivities();
+  activities=data||[];
+  await loadSubChangedActivityIds();
+  renderActivities(); renderAdminActivities();
 }
 
 function effectiveScheduleStart(a){
@@ -326,7 +342,7 @@ function filteredActivities(){
   if(['4','6'].includes(currentRange)){ horizon=new Date(today); horizon.setDate(horizon.getDate()+(Number(currentRange)*7)); }
   const rows=activities.filter(a=>{
     if(currentRange==='all' && a.status==='Complete') return false;
-    if(currentRange==='changed' && a.original_start===a.current_start && a.original_finish===a.current_finish) return false;
+    if(currentRange==='changed' && !subChangedActivityIds.has(a.id)) return false;
     if(horizon){
       // Use live/current dates when entered; otherwise fall back to the baseline schedule dates.
       const startValue=effectiveScheduleStart(a), finishValue=effectiveScheduleFinish(a);
