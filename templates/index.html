@@ -102,6 +102,22 @@
             </select>
           </div>
 
+          <div id="gcMobileDashboard" class="gc-mobile-dashboard hidden">
+            <div class="gc-mobile-summary-card">
+              <div>
+                <div class="gc-mobile-kicker">Field Dashboard</div>
+                <h2>CTCC Oasis</h2>
+                <p id="gcMobileSummaryText" class="muted">4-Week Look Ahead</p>
+              </div>
+              <button id="gcMobileRefresh" class="ghost" type="button">Refresh</button>
+            </div>
+            <div id="gcMobileStats" class="gc-mobile-stats"></div>
+            <div class="gc-mobile-section-head"><h3>Needs Attention</h3><button id="gcNeedsAttentionBtn" class="ghost" type="button">View All</button></div>
+            <div id="gcNeedsAttention" class="gc-needs-attention"></div>
+            <div class="gc-mobile-section-head"><h3>Schedule</h3><span id="gcMobileResultCount" class="muted small"></span></div>
+            <div id="gcActivityCards" class="gc-activity-cards"></div>
+          </div>
+
           <div id="subDashboard" class="sub-dashboard hidden">
             <div class="sub-welcome-card">
               <div>
@@ -194,6 +210,12 @@
         </section>
       </main>
     </div>
+    <nav id="gcMobileNav" class="gc-mobile-nav hidden" aria-label="Mobile navigation">
+      <button type="button" class="gc-mobile-nav-btn active" data-mobile-view="schedule"><span>▤</span>Schedule</button>
+      <button type="button" class="gc-mobile-nav-btn" data-mobile-view="issues"><span>!</span>Issues</button>
+      <button type="button" class="gc-mobile-nav-btn" data-mobile-view="history"><span>↻</span>History</button>
+      <button type="button" class="gc-mobile-nav-btn admin-only" data-mobile-view="admin"><span>⚙</span>Admin</button>
+    </nav>
   </section>
 
   <div id="editModal" class="modal hidden">

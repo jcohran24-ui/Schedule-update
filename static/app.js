@@ -13,6 +13,7 @@ let selectedProjectId = null;
 let currentRange = 'all';
 let subStatusFilter = '';
 let saveAndNextRequested = false;
+let gcMobileIssuesOnly = false;
 
 const $ = (id) => document.getElementById(id);
 const fmt = (d) => d ? new Date(d + 'T12:00:00').toLocaleDateString() : '—';
@@ -204,6 +205,7 @@ async function enterApp(s){
   $('forcePasswordScreen').classList.add('hidden');
   $('appScreen').classList.remove('hidden');
   document.body.classList.toggle('sub-mode',p.role==='sub');
+  document.body.classList.toggle('gc-mode',isGC());
   $('userBadge').textContent=`${p.full_name || p.email} • ${p.role==='sub'?'Subcontractor':p.role==='gc_admin'?'GC Admin':'GC'}${p.is_activity_admin?' • Activity Editor':''}`;
   document.querySelectorAll('.gc-only').forEach(el=>el.classList.toggle('hidden',!isGC()));
   document.querySelectorAll('.admin-only').forEach(el=>el.classList.toggle('hidden',!(isAdmin() || isActivityAdmin())));
@@ -378,9 +380,52 @@ function renderSubDashboard(rows){
   }).join('') || '<div class="card empty">No activities match this view.</div>';
   document.querySelectorAll('.sub-activity-card').forEach(b=>b.onclick=()=>openEdit(b.dataset.id));
 }
+function gcMobileAttentionRows(){
+  return activities.filter(a=>a.status!=='Complete' && (isPastDueActivity(a) || a.scope_issue || ((a.status==='In Progress'||a.status==='Delayed') && !a.current_start) || (a.current_start&&a.original_start&&a.current_start!==a.original_start) || (a.current_finish&&a.original_finish&&a.current_finish!==a.original_finish)));
+}
+function gcMobileCardMarkup(a){
+  const overdue=isPastDueActivity(a);
+  const changed=(a.current_start&&a.original_start!==a.current_start)||(a.current_finish&&a.original_finish!==a.current_finish);
+  const pct=effectivePercent(a);
+  const tags=[overdue?'<span class="gc-tag danger">Past Due</span>':'',a.scope_issue?'<span class="gc-tag issue">Scope Flag</span>':'',changed?'<span class="gc-tag changed">Date Change</span>':'',a.status==='In Progress'?'<span class="gc-tag progress">In Progress</span>':''].filter(Boolean).join('');
+  return `<button class="gc-activity-card ${overdue?'overdue':''}" type="button" data-id="${a.id}">
+    <div class="gc-card-head"><div><strong>${esc(a.activity_name)}</strong><div class="gc-card-code">${esc(a.activity_code)}${a.area?' • '+esc(a.area):''}</div></div><span class="gc-card-arrow">›</span></div>
+    <div class="gc-card-tags">${tags||`<span class="gc-tag">${esc(a.status)}</span>`}</div>
+    <div class="gc-card-grid"><div><span>Trade</span><b>${esc(companyName(a.company_id))}</b></div><div><span>Duration</span><b>${baselineDuration(a)==null?'—':baselineDuration(a)+'d'}</b></div><div><span>Baseline</span><b>${fmt(a.original_start)} – ${fmt(a.original_finish)}</b></div><div><span>Current</span><b>${fmt(a.current_start)} – ${fmt(a.current_finish)}</b></div></div>
+    <div class="gc-card-foot"><span>${esc(a.status)}${a.status==='In Progress'?' • '+pct+'%':''}</span><span>${a.last_reviewed_at?'Reviewed '+new Date(a.last_reviewed_at).toLocaleDateString():''}</span></div>
+  </button>`;
+}
+function renderGCMobileDashboard(rows){
+  const dash=$('gcMobileDashboard'), table=$('scheduleTableWrap');
+  if(!dash||!table) return;
+  const mobileGC=isGC();
+  dash.classList.toggle('hidden',!mobileGC);
+  if(!mobileGC) return;
+  const attention=gcMobileAttentionRows();
+  const visible=gcMobileIssuesOnly ? attention.slice().sort(chronologicalSort) : rows;
+  const pastDue=activities.filter(a=>a.status!=='Complete'&&isPastDueActivity(a)).length;
+  const progress=activities.filter(a=>a.status==='In Progress').length;
+  const changes=activities.filter(a=>(a.current_start&&a.original_start!==a.current_start)||(a.current_finish&&a.original_finish!==a.current_finish)).length;
+  const scope=activities.filter(a=>a.scope_issue).length;
+  const label=currentRange==='4'?'4-Week Look Ahead':currentRange==='6'?'6-Week Look Ahead':currentRange==='changed'?'Changed Activities':'All Remaining';
+  $('gcMobileSummaryText').textContent=label;
+  $('gcMobileStats').innerHTML=[['Remaining',activities.filter(a=>a.status!=='Complete').length,''],['Past Due',pastDue,'danger'],['In Progress',progress,'progress'],['Issues',scope+changes,'issue']].map(([l,n,c])=>`<button type="button" class="gc-mobile-stat ${c}" data-gc-stat="${l}"><strong>${n}</strong><span>${l}</span></button>`).join('');
+  const top=attention.slice().sort(chronologicalSort).slice(0,5);
+  $('gcNeedsAttention').innerHTML=top.length?top.map(a=>`<button class="gc-attention-row" type="button" data-id="${a.id}"><div><strong>${esc(a.activity_code)} • ${esc(a.activity_name)}</strong><span>${esc(companyName(a.company_id))} • ${isPastDueActivity(a)?'Past Due':a.scope_issue?'Scope Flag':'Needs Review'}</span></div><b>›</b></button>`).join(''):'<div class="gc-attention-empty">Nothing needs attention right now.</div>';
+  $('gcMobileResultCount').textContent=`${visible.length} activities`;
+  $('gcActivityCards').innerHTML=visible.length?visible.map(gcMobileCardMarkup).join(''):'<div class="card empty">No activities match this view.</div>';
+  document.querySelectorAll('.gc-activity-card,.gc-attention-row').forEach(b=>b.onclick=()=>{const a=activities.find(x=>x.id===b.dataset.id);if(a&&isActivityAdmin())openAdminActivity(a); else if(a) toast(`${a.activity_code}: ${a.activity_name}`);});
+  document.querySelectorAll('.gc-mobile-stat').forEach(b=>b.onclick=()=>{
+    if(b.dataset.gcStat==='Past Due'){ gcMobileIssuesOnly=true; renderGCMobileDashboard(attention.filter(isPastDueActivity)); }
+    else if(b.dataset.gcStat==='In Progress'){ gcMobileIssuesOnly=false; $('statusFilter').value='In Progress'; renderActivities(); }
+    else if(b.dataset.gcStat==='Issues'){ gcMobileIssuesOnly=true; renderGCMobileDashboard(attention); }
+  });
+}
+
 function renderActivities(){
   const rows=filteredActivities(); $('emptyState').classList.toggle('hidden',rows.length>0);
   renderSubDashboard(rows);
+  renderGCMobileDashboard(rows);
   if(!isSub()){
     $('activityBody').innerHTML=rows.map(a=>{
       const startChanged=!!a.current_start && a.original_start!==a.current_start, finishChanged=!!a.current_finish && a.original_finish!==a.current_finish;
@@ -407,7 +452,7 @@ function renderStats(rows=filteredActivities()){
 }
 
 ['searchInput','tradeFilter','statusFilter'].forEach(id=>$(id)?.addEventListener(id==='searchInput'?'input':'change',renderActivities));
-document.querySelectorAll('.range-btn').forEach(b=>b.addEventListener('click',()=>{document.querySelectorAll('.range-btn').forEach(x=>x.classList.remove('active'));b.classList.add('active');currentRange=b.dataset.range;renderActivities();}));
+document.querySelectorAll('.range-btn').forEach(b=>b.addEventListener('click',()=>{gcMobileIssuesOnly=false;document.querySelectorAll('.range-btn').forEach(x=>x.classList.remove('active'));b.classList.add('active');currentRange=b.dataset.range;renderActivities();}));
 document.querySelectorAll('.sub-chip').forEach(b=>b.addEventListener('click',()=>{document.querySelectorAll('.sub-chip').forEach(x=>x.classList.remove('active'));b.classList.add('active');subStatusFilter=b.dataset.subStatus||'';renderActivities();}));
 
 $('editStart')?.addEventListener('change', ()=>{ autoFillEditFinish(); refreshEditAutoPercent(); });
@@ -482,6 +527,25 @@ $('editForm')?.addEventListener('submit',async e=>{
   if(saveAndNextRequested && nextId && activities.some(a=>a.id===nextId)) setTimeout(()=>openEdit(nextId),120);
   saveAndNextRequested=false;
 });
+
+$('gcNeedsAttentionBtn')?.addEventListener('click',()=>{gcMobileIssuesOnly=true;renderGCMobileDashboard(gcMobileAttentionRows().slice().sort(chronologicalSort));});
+$('gcMobileRefresh')?.addEventListener('click',async()=>{await loadActivities();toast('Schedule refreshed');});
+
+document.querySelectorAll('.gc-mobile-nav-btn').forEach(b=>b.addEventListener('click',async()=>{
+  document.querySelectorAll('.gc-mobile-nav-btn').forEach(x=>x.classList.remove('active')); b.classList.add('active');
+  const view=b.dataset.mobileView;
+  if(view==='issues'){
+    document.querySelectorAll('.view').forEach(v=>v.classList.add('hidden')); $('scheduleView').classList.remove('hidden');
+    gcMobileIssuesOnly=true; renderGCMobileDashboard(gcMobileAttentionRows().slice().sort(chronologicalSort));
+    return;
+  }
+  gcMobileIssuesOnly=false;
+  document.querySelectorAll('.view').forEach(v=>v.classList.add('hidden'));
+  const el=$(view+'View'); if(el) el.classList.remove('hidden');
+  if(view==='history') await loadHistory();
+  if(view==='admin') await loadReferenceData();
+  if(view==='schedule') renderActivities();
+}));
 
 // Navigation
 document.querySelectorAll('.nav-btn').forEach(b=>b.addEventListener('click',async()=>{
