@@ -289,3 +289,8 @@ When Activity Admin changes an activity from one company/trade to another, the o
 - PWA cache bumped to V40.
 - No Supabase database migration required.
 - Note: account deletion/disablement, password/security events, manual logout, or Supabase project-level session timeout policies can still require sign-in again.
+
+
+## V41 — Safe schedule revision imports
+
+Updated schedule imports now reconcile by Project + Activity ID instead of skipping existing activities. Existing activities refresh schedule-controlled fields only: activity description, area, baseline start, baseline finish, duration, trade/company assignment, and source upload. Foreman-entered Current Start, Current Finish, Status, Percent Complete, Notes, and activity history are preserved. New Activity IDs are added with blank current dates. If an import changes the assigned trade/company, the old trade's scope flag and review timestamp are cleared so the newly assigned subcontractor receives a clean activity to review.

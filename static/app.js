@@ -1041,29 +1041,78 @@ $('uploadBtn')?.addEventListener('click',async()=>{
   $('uploadBtn').disabled=true;$('uploadResult').textContent='Reading schedule...';
   try{
     const buf=await file.arrayBuffer(); const wb=XLSX.read(buf,{type:'array',cellDates:false}); const ws=wb.Sheets[wb.SheetNames[0]]; const raw=XLSX.utils.sheet_to_json(ws,{defval:null});
-    let imported=0,skipped=0; const batch=[];
+    // V41: Safe schedule revision import.
+    // Existing activities refresh schedule-controlled setup fields only. Foreman-entered
+    // current dates, status, percent, notes and history are intentionally preserved.
+    let added=0,updated=0,skipped=0;
+    const newRows=[];
+    const revisionRows=[];
+    const existingByCode=new Map((activities||[]).map(a=>[String(a.activity_code||'').trim().toLowerCase(),a]));
     for(const rr of raw){
       const r=normalizedRow(rr);
       const code=pick(r,['activity_id','activity_code','id','activity']);
       const name=pick(r,['activity_name','activity_description','description','name']);
       if(!code||!name){skipped++;continue;}
+      const cleanCode=String(code).trim();
       const companyLabel=pick(r,['trade_company','company_trade','company','subcontractor','trade','responsible_contractor']);
       const company_id=await ensureCompany(companyLabel);
       const start=excelDate(pick(r,['baseline_start','original_start','start','start_date']));
       const finish=excelDate(pick(r,['baseline_finish','original_finish','finish','finish_date']));
-      const currentStart=excelDate(pick(r,['current_start']));
-      const currentFinish=excelDate(pick(r,['current_finish']));
       const durationRaw=pick(r,['baseline_duration','planned_duration','pd','duration_workdays','duration','duration_days','remaining_duration']);
       let duration=durationRaw===null?null:(parseInt(String(durationRaw).replace(/[^0-9-]/g,''),10)||null);
       if(duration===null) duration=baselineWorkdays(start,finish);
-      batch.push({project_id:selectedProjectId,company_id,activity_code:String(code).trim(),activity_name:String(name).trim(),area:String(pick(r,['area','location','building_area'])||'').trim()||null,original_start:start,original_finish:finish,current_start:currentStart,current_finish:currentFinish,duration_days:duration,status:'Not Started',percent_complete:0,auto_percent:true,source_upload:file.name});
+      const scheduleFields={
+        project_id:selectedProjectId,
+        company_id,
+        activity_code:cleanCode,
+        activity_name:String(name).trim(),
+        area:String(pick(r,['area','location','building_area'])||'').trim()||null,
+        original_start:start,
+        original_finish:finish,
+        duration_days:duration,
+        source_upload:file.name
+      };
+      const existing=existingByCode.get(cleanCode.toLowerCase());
+      if(existing){
+        // If the revised schedule changes ownership, the prior trade's scope-review flag
+        // no longer applies. Reset only those ownership-review fields for the new trade.
+        if((existing.company_id||null)!==(company_id||null)){
+          scheduleFields.scope_issue=false;
+          scheduleFields.last_reviewed_at=null;
+        }
+        revisionRows.push(scheduleFields);
+      }else{
+        newRows.push({
+          ...scheduleFields,
+          current_start:null,
+          current_finish:null,
+          status:'Not Started',
+          percent_complete:0,
+          auto_percent:true,
+          notes:null
+        });
+      }
     }
-    for(let i=0;i<batch.length;i+=200){
-      const part=batch.slice(i,i+200); const {error}=await sb.from('activities').upsert(part,{onConflict:'project_id,activity_code',ignoreDuplicates:true}); if(error)throw error; imported+=part.length;
-      $('uploadResult').textContent=`Imported ${Math.min(imported,batch.length)} of ${batch.length}...`;
+    const total=newRows.length+revisionRows.length;
+    for(let i=0;i<revisionRows.length;i+=200){
+      const part=revisionRows.slice(i,i+200);
+      const {error}=await sb.from('activities').upsert(part,{onConflict:'project_id,activity_code'});
+      if(error)throw error;
+      updated+=part.length;
+      $('uploadResult').textContent=`Updating schedule revision ${updated+added} of ${total}...`;
     }
-    const {error:logErr}=await sb.from('schedule_uploads').insert({project_id:selectedProjectId,filename:file.name,rows_imported:imported,uploaded_by:session.user.id}); if(logErr)console.warn(logErr);
-    await loadReferenceData();await loadActivities();$('uploadResult').textContent=`Done: ${imported} activities imported; ${skipped} rows skipped.`;toast('Schedule import complete');
+    for(let i=0;i<newRows.length;i+=200){
+      const part=newRows.slice(i,i+200);
+      const {error}=await sb.from('activities').upsert(part,{onConflict:'project_id,activity_code',ignoreDuplicates:true});
+      if(error)throw error;
+      added+=part.length;
+      $('uploadResult').textContent=`Updating schedule revision ${updated+added} of ${total}...`;
+    }
+    const rowsProcessed=added+updated;
+    const {error:logErr}=await sb.from('schedule_uploads').insert({project_id:selectedProjectId,filename:file.name,rows_imported:rowsProcessed,uploaded_by:session.user.id}); if(logErr)console.warn(logErr);
+    await loadReferenceData();await loadActivities();
+    $('uploadResult').textContent=`Done: ${updated} existing activities refreshed; ${added} new activities added; ${skipped} rows skipped. Foreman updates were preserved.`;
+    toast('Schedule revision imported — foreman updates preserved');
   }catch(err){console.error(err);$('uploadResult').textContent=`Import error: ${err.message||err}`;toast('Schedule import failed');}
   finally{$('uploadBtn').disabled=false;}
 });
