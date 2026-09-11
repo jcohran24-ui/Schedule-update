@@ -265,3 +265,11 @@ When an activity has a Current Start but no Current Finish, lookahead filtering 
 - Selecting Unassigned shows only activities with no company/trade assignment.
 - Works with the existing look-ahead, status, search, and Changed filters.
 - No Supabase migration required.
+
+
+## V37 - Edit User Role
+- GC Admin can edit an existing user's role from Admin > Users without changing the user's login or password.
+- Roles: Subcontractor, GC, GC Admin.
+- Subcontractor role requires a company/trade; GC roles clear the company assignment.
+- Activity Admin privilege is preserved separately.
+- An admin cannot remove their own GC Admin access.

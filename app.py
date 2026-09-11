@@ -228,6 +228,63 @@ def set_user_active(user_id):
     return jsonify({'ok': True})
 
 
+@app.route('/api/admin/user/<user_id>/role', methods=['PATCH'])
+def set_user_role(user_id):
+    """Update an existing user's role while preserving their current login and password."""
+    if not SUPABASE_SERVICE_ROLE_KEY:
+        return jsonify({'error': 'Service role key is not configured'}), 500
+    acting_user, err = verify_gc_admin(request.headers.get('Authorization'))
+    if err:
+        return jsonify({'error': err[0]}), err[1]
+
+    data = request.get_json(silent=True) or {}
+    role = data.get('role')
+    company_id = data.get('company_id') or None
+    if role not in ('gc_admin', 'gc', 'sub'):
+        return jsonify({'error': 'Invalid role'}), 400
+    if role == 'sub' and not company_id:
+        return jsonify({'error': 'Subcontractor users must be assigned to a company'}), 400
+    if role in ('gc', 'gc_admin'):
+        company_id = None
+
+    acting_uid = (acting_user or {}).get('id')
+    if user_id == acting_uid and role != 'gc_admin':
+        return jsonify({'error': 'You cannot remove your own GC Admin access'}), 400
+
+    headers = {
+        'apikey': SUPABASE_SERVICE_ROLE_KEY,
+        'Authorization': f'Bearer {SUPABASE_SERVICE_ROLE_KEY}',
+        'Content-Type': 'application/json',
+    }
+
+    # Make sure the target profile exists before updating it.
+    lookup = requests.get(
+        f'{SUPABASE_URL}/rest/v1/profiles',
+        params={'id': f'eq.{user_id}', 'select': 'id,is_activity_admin'},
+        headers=headers,
+        timeout=15,
+    )
+    rows = lookup.json() if lookup.ok else []
+    if not rows:
+        return jsonify({'error': 'User profile not found'}), 404
+
+    resp = requests.patch(
+        f'{SUPABASE_URL}/rest/v1/profiles',
+        params={'id': f'eq.{user_id}'},
+        headers={**headers, 'Prefer': 'return=minimal'},
+        json={'role': role, 'company_id': company_id},
+        timeout=15,
+    )
+    if not resp.ok:
+        try:
+            detail = resp.json()
+        except Exception:
+            detail = resp.text
+        return jsonify({'error': 'Could not update user role', 'detail': detail}), resp.status_code
+
+    return jsonify({'ok': True, 'role': role, 'company_id': company_id})
+
+
 @app.route('/api/admin/user/<user_id>/password', methods=['PATCH'])
 def set_user_password(user_id):
     if not SUPABASE_SERVICE_ROLE_KEY:

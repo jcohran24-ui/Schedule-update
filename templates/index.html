@@ -319,6 +319,19 @@
   </div>
 
 
+  <div id="userRoleModal" class="modal hidden">
+    <div class="modal-card">
+      <div class="modal-head"><div><h3>Edit User Role</h3><p id="editUserRoleLabel" class="muted"></p></div><button id="closeUserRoleModal" class="icon-btn" type="button">×</button></div>
+      <form id="userRoleForm" class="stack">
+        <input id="editUserRoleId" type="hidden">
+        <label>Role<select id="editUserRole" required><option value="sub">Subcontractor</option><option value="gc">GC</option><option value="gc_admin">GC Admin</option></select></label>
+        <label>Company / Trade<select id="editUserCompany"><option value="">Select company</option></select></label>
+        <p class="muted small">GC and GC Admin users are not assigned to a subcontractor company. Activity Admin access is managed separately and is not changed here.</p>
+        <button class="primary" type="submit">Save Role</button>
+      </form>
+    </div>
+  </div>
+
   <div id="passwordModal" class="modal hidden">
     <div class="modal-card">
       <div class="modal-head"><div><h3>Set User Password</h3><p id="passwordUserLabel" class="muted"></p></div><button id="closePasswordModal" class="icon-btn">×</button></div>

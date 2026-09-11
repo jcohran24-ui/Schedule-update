@@ -1,4 +1,4 @@
-const CACHE_NAME = 'trade-schedule-v36-unassigned-trade-filter';
+const CACHE_NAME = 'trade-schedule-v37-edit-user-role';
 const APP_SHELL = [
   '/',
   '/static/styles.css',

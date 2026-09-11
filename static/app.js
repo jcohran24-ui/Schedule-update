@@ -282,9 +282,11 @@ function renderUsers(){
     const deleteButton = protectedUser
       ? '<button class="danger" type="button" disabled title="This admin account is protected">Delete</button>'
       : `<button class="danger delete-user" type="button" data-id="${p.id}">Delete</button>`;
-    return `<tr><td>${esc(p.full_name||'')}</td><td>${esc(p.email||'')}</td><td>${esc(p.role)}</td><td>${esc(companyName(p.company_id))}</td><td>${p.active?'Yes':'No'}</td><td class="user-actions"><button class="ghost set-password" data-id="${p.id}">Set Password</button> <button class="ghost toggle-user" data-id="${p.id}" data-active="${p.active}">${p.active?'Deactivate':'Activate'}</button> ${deleteButton}</td></tr>`;
+    const roleLabel=p.role==='gc_admin'?'GC Admin':p.role==='gc'?'GC':'Subcontractor';
+    return `<tr><td>${esc(p.full_name||'')}</td><td>${esc(p.email||'')}</td><td>${esc(roleLabel)}</td><td>${esc(companyName(p.company_id))}</td><td>${p.active?'Yes':'No'}</td><td class="user-actions"><button class="ghost edit-user-role" data-id="${p.id}">Edit Role</button> <button class="ghost set-password" data-id="${p.id}">Set Password</button> <button class="ghost toggle-user" data-id="${p.id}" data-active="${p.active}">${p.active?'Deactivate':'Activate'}</button> ${deleteButton}</td></tr>`;
   }).join('');
   if(!shown.length) $('userBody').innerHTML='<tr><td colspan="6" class="muted">No users match this search.</td></tr>';
+  document.querySelectorAll('.edit-user-role').forEach(b=>b.onclick=()=>openUserRoleModal(b.dataset.id));
   document.querySelectorAll('.toggle-user').forEach(b=>b.onclick=()=>toggleUser(b.dataset.id,b.dataset.active!=='true'));
   document.querySelectorAll('.set-password').forEach(b=>b.onclick=()=>openPasswordModal(b.dataset.id));
   document.querySelectorAll('.delete-user').forEach(b=>b.onclick=()=>deleteUser(b.dataset.id));
@@ -748,6 +750,43 @@ async function deleteUser(id){
   toast('User deleted');
   await loadReferenceData();
 }
+
+function syncUserRoleCompanyState(){
+  const role=$('editUserRole')?.value;
+  const company=$('editUserCompany');
+  if(!company) return;
+  company.disabled=role!=='sub';
+  company.required=role==='sub';
+  if(role!=='sub') company.value='';
+}
+
+function openUserRoleModal(userId){
+  if(!isAdmin()) return;
+  const p=profiles.find(x=>x.id===userId); if(!p) return;
+  $('editUserRoleId').value=userId;
+  $('editUserRoleLabel').textContent=`${p.full_name||p.email} • ${p.email||''}`;
+  $('editUserRole').value=p.role||'sub';
+  $('editUserCompany').innerHTML='<option value="">Select company</option>'+companies.map(c=>`<option value="${c.id}">${esc(c.company_name)}</option>`).join('');
+  $('editUserCompany').value=p.company_id||'';
+  syncUserRoleCompanyState();
+  $('userRoleModal').classList.remove('hidden');
+}
+$('editUserRole')?.addEventListener('change',syncUserRoleCompanyState);
+$('closeUserRoleModal')?.addEventListener('click',()=>$('userRoleModal').classList.add('hidden'));
+$('userRoleModal')?.addEventListener('click',e=>{if(e.target===$('userRoleModal'))$('userRoleModal').classList.add('hidden')});
+$('userRoleForm')?.addEventListener('submit',async e=>{
+  e.preventDefault(); if(!isAdmin()) return;
+  const id=$('editUserRoleId').value;
+  const role=$('editUserRole').value;
+  const company_id=role==='sub'?($('editUserCompany').value||null):null;
+  if(role==='sub' && !company_id){toast('Subcontractor users must be assigned to a company');return;}
+  const r=await fetch(`/api/admin/user/${id}/role`,{method:'PATCH',headers:{'Content-Type':'application/json','Authorization':`Bearer ${session.access_token}`},body:JSON.stringify({role,company_id})});
+  const data=await r.json().catch(()=>({}));
+  if(!r.ok){toast(data.error||'Could not update user role');return;}
+  $('userRoleModal').classList.add('hidden');
+  toast('User role updated');
+  await loadReferenceData();
+});
 
 function openPasswordModal(userId){
   if(!isAdmin()) return;
