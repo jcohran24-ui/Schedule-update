@@ -280,3 +280,12 @@ Adds a GC/GC Admin Reports screen with downloadable PDFs for Schedule Changes, T
 
 ## V39 - Clear stale scope flags on reassignment
 When Activity Admin changes an activity from one company/trade to another, the old `scope_issue` flag is automatically cleared and `last_reviewed_at` is reset. This prevents a 'Not My Scope' flag raised by the previous subcontractor from following the activity to the newly assigned subcontractor. No Supabase migration is required.
+
+
+## V40 - Persistent login
+- Explicitly persists Supabase auth sessions in localStorage.
+- Keeps automatic token refresh enabled.
+- Refreshes the session when the app regains focus/visibility and every 30 minutes while open.
+- PWA cache bumped to V40.
+- No Supabase database migration required.
+- Note: account deletion/disablement, password/security events, manual logout, or Supabase project-level session timeout policies can still require sign-in again.

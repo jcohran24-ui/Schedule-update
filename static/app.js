@@ -1,6 +1,14 @@
 const cfg = window.APP_CONFIG || {};
 const sb = cfg.supabaseUrl && cfg.supabaseAnonKey
-  ? window.supabase.createClient(cfg.supabaseUrl, cfg.supabaseAnonKey)
+  ? window.supabase.createClient(cfg.supabaseUrl, cfg.supabaseAnonKey, {
+      auth: {
+        persistSession: true,
+        autoRefreshToken: true,
+        detectSessionInUrl: true,
+        storage: window.localStorage,
+        storageKey: 'ctcc-oasis-auth'
+      }
+    })
   : null;
 
 let session = null;
@@ -153,11 +161,49 @@ function isSub(){ return profile && profile.role === 'sub'; }
 function companyName(id){ return companies.find(c=>c.id===id)?.company_name || 'Unassigned'; }
 function profileName(id){ return profiles.find(p=>p.id===id)?.full_name || profiles.find(p=>p.id===id)?.email || 'User'; }
 
+async function ensureSessionFresh(){
+  if(!sb) return null;
+  try{
+    const {data:{session:s}} = await sb.auth.getSession();
+    if(!s) return null;
+    const expiresAtMs = Number(s.expires_at || 0) * 1000;
+    const refreshSoon = !expiresAtMs || (expiresAtMs - Date.now()) < 60 * 60 * 1000;
+    if(refreshSoon){
+      const {data,error}=await sb.auth.refreshSession();
+      if(!error && data?.session){
+        session=data.session;
+        return data.session;
+      }
+    }
+    session=s;
+    return s;
+  }catch(_e){
+    return session;
+  }
+}
+
 async function init(){
   if(!sb) return;
-  const {data:{session:s}} = await sb.auth.getSession();
+  const s = await ensureSessionFresh();
   if(s) await enterApp(s);
-  sb.auth.onAuthStateChange(async (_event,sess)=>{ if(sess && !session) await enterApp(sess); });
+  sb.auth.onAuthStateChange(async (event,sess)=>{
+    if(sess){
+      session=sess;
+      if(!profile && (event==='SIGNED_IN' || event==='INITIAL_SESSION')) await enterApp(sess);
+    }
+    if(event==='SIGNED_OUT'){
+      session=null;
+      profile=null;
+    }
+  });
+
+  // Browsers and installed PWAs can suspend background timers. Refresh when the app
+  // becomes active again so a valid refresh token keeps the user signed in.
+  document.addEventListener('visibilitychange',()=>{
+    if(document.visibilityState==='visible') ensureSessionFresh();
+  });
+  window.addEventListener('focus',()=>ensureSessionFresh());
+  setInterval(()=>ensureSessionFresh(), 30 * 60 * 1000);
 }
 
 $('loginForm')?.addEventListener('submit', async e=>{
