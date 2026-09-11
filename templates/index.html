@@ -67,6 +67,7 @@
     <div class="app-shell">
       <aside class="sidebar">
         <button class="nav-btn active" data-view="schedule">Schedule</button>
+        <button class="nav-btn gc-only" data-view="reports">Reports</button>
         <button class="nav-btn gc-only" data-view="history">Change History</button>
         <button class="nav-btn admin-only" data-view="admin">Admin</button>
       </aside>
@@ -150,6 +151,23 @@
               <tbody id="activityBody"></tbody>
             </table>
             <div id="emptyState" class="empty hidden">No activities match this view.</div>
+          </div>
+        </section>
+
+
+        <section id="reportsView" class="view hidden">
+          <div class="page-head">
+            <div><h2>Reports</h2><p class="muted">Generate field-ready PDF reports from the live schedule.</p></div>
+          </div>
+          <div class="reports-grid">
+            <button class="report-card" data-report="changes" type="button"><span class="report-icon">↻</span><div><h3>Schedule Changes</h3><p>Subcontractor date/status changes with activity description, old vs. new values, notes, user, and time.</p></div><b>›</b></button>
+            <button class="report-card" data-report="trade-performance" type="button"><span class="report-icon">▦</span><div><h3>Trade Performance</h3><p>Remaining, past due, in progress, completed this week, upcoming work, and schedule changes by trade.</p></div><b>›</b></button>
+            <button class="report-card" data-report="weekly-super" type="button"><span class="report-icon">★</span><div><h3>Weekly Superintendent</h3><p>Weekly starts/completions, upcoming work, past due items, constraints, and major schedule risks.</p></div><b>›</b></button>
+            <button class="report-card" data-report="unassigned" type="button"><span class="report-icon">?</span><div><h3>Unassigned Activities</h3><p>All remaining schedule activities that do not have a responsible company/trade assigned.</p></div><b>›</b></button>
+            <button class="report-card" data-report="constraints" type="button"><span class="report-icon">!</span><div><h3>Two-Week Constraint</h3><p>Past due or upcoming 14-day work with notes, scope flags, missing dates, delayed/on-hold status, or date variance.</p></div><b>›</b></button>
+            <button class="report-card" data-report="completed" type="button"><span class="report-icon">✓</span><div><h3>Completed This Week</h3><p>Activities moved to Complete during the current Monday-Sunday week.</p></div><b>›</b></button>
+            <button class="report-card" data-report="variance" type="button"><span class="report-icon">±</span><div><h3>Schedule Variance</h3><p>Baseline versus current start/finish dates, workday variance, status, and notes. Worst delays first.</p></div><b>›</b></button>
+            <button class="report-card" data-report="sub-meeting" type="button"><span class="report-icon">☰</span><div><h3>Subcontractor Meeting</h3><p>Past due work, 4-week look-ahead, this week’s changes, and constraints in one meeting packet.</p></div><b>›</b></button>
           </div>
         </section>
 
@@ -269,11 +287,30 @@
     <nav id="gcMobileNav" class="gc-mobile-nav hidden" aria-label="Mobile navigation">
       <button type="button" class="gc-mobile-nav-btn active" data-mobile-view="schedule"><span>▤</span>Schedule</button>
       <button type="button" class="gc-mobile-nav-btn" data-mobile-view="issues"><span>!</span>Issues</button>
+      <button type="button" class="gc-mobile-nav-btn" data-mobile-view="reports"><span>▦</span>Reports</button>
       <button type="button" class="gc-mobile-nav-btn" data-mobile-view="history"><span>↻</span>History</button>
       <button type="button" class="gc-mobile-nav-btn admin-only" data-mobile-view="admin"><span>⚙</span>Admin</button>
     </nav>
   </section>
 
+
+
+  <div id="reportModal" class="modal hidden">
+    <div class="modal-card report-modal-card">
+      <div class="modal-head"><div><h3 id="reportModalTitle">Generate Report</h3><p id="reportModalHelp" class="muted"></p></div><button id="closeReportModal" class="icon-btn" type="button">×</button></div>
+      <form id="reportForm" class="stack">
+        <input id="reportType" type="hidden">
+        <label id="reportTradeWrap">Trade
+          <select id="reportTrade"><option value="">All Trades</option></select>
+        </label>
+        <label id="reportPeriodWrap">Period
+          <select id="reportPeriod"><option value="week">This Week</option><option value="7">Last 7 Days</option><option value="30">Last 30 Days</option><option value="all">All Recorded Changes</option></select>
+        </label>
+        <p id="reportDefinition" class="report-definition"></p>
+        <button id="generateReportBtn" class="primary" type="submit">Generate PDF</button>
+      </form>
+    </div>
+  </div>
 
   <div id="exportLookaheadModal" class="modal hidden">
     <div class="modal-card export-modal-card">

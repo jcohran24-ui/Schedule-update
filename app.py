@@ -603,6 +603,113 @@ def export_lookahead_pdf():
     return send_file(buf, mimetype='application/pdf', as_attachment=True, download_name=filename, max_age=0)
 
 
+
+
+def _pdf_escape(value):
+    return ('' if value is None else str(value)).replace('&','&amp;').replace('<','&lt;').replace('>','&gt;')
+
+
+def _build_report_pdf(data):
+    from reportlab.lib import colors
+    from reportlab.lib.pagesizes import letter, landscape
+    from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+    from reportlab.lib.units import inch
+    from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer, PageBreak
+
+    project_name = str(data.get('project_name') or 'CTCC Oasis')[:120]
+    report_title = str(data.get('title') or 'Schedule Report')[:160]
+    subtitle = str(data.get('subtitle') or '')[:300]
+    sections = data.get('sections') or []
+    if not isinstance(sections, list) or not sections:
+        raise ValueError('No report sections were supplied')
+
+    buf = io.BytesIO()
+    page_size = landscape(letter)
+    doc = SimpleDocTemplate(buf, pagesize=page_size, rightMargin=.28*inch, leftMargin=.28*inch,
+                            topMargin=.35*inch, bottomMargin=.34*inch,
+                            title=f'{project_name} - {report_title}', author='Schedule Update')
+    styles = getSampleStyleSheet()
+    title_style = ParagraphStyle('RTitle', parent=styles['Title'], fontName='Helvetica-Bold', fontSize=15, leading=18,
+                                 textColor=colors.HexColor('#173A63'), spaceAfter=2)
+    meta_style = ParagraphStyle('RMeta', parent=styles['Normal'], fontSize=7.5, leading=9,
+                                textColor=colors.HexColor('#52606D'), spaceAfter=7)
+    section_style = ParagraphStyle('RSection', parent=styles['Heading2'], fontName='Helvetica-Bold', fontSize=10.5,
+                                   leading=13, textColor=colors.white, backColor=colors.HexColor('#173A63'),
+                                   leftIndent=5, spaceBefore=7, spaceAfter=4)
+    cell = ParagraphStyle('RCell', parent=styles['Normal'], fontSize=6.4, leading=7.6, textColor=colors.HexColor('#172B4D'))
+    head = ParagraphStyle('RHead', parent=cell, fontName='Helvetica-Bold', textColor=colors.white)
+    note = ParagraphStyle('RNote', parent=styles['Normal'], fontSize=7, leading=9, textColor=colors.HexColor('#52606D'))
+    big = ParagraphStyle('RBig', parent=styles['Normal'], fontName='Helvetica-Bold', fontSize=12, leading=14, textColor=colors.HexColor('#173A63'))
+
+    story=[Paragraph(_pdf_escape(project_name), title_style), Paragraph(_pdf_escape(report_title), big)]
+    meta = f'Generated {datetime.now().strftime("%m/%d/%Y %I:%M %p")}' + (f' &nbsp;&nbsp;|&nbsp;&nbsp; {_pdf_escape(subtitle)}' if subtitle else '')
+    story.append(Paragraph(meta, meta_style))
+
+    for idx, sec in enumerate(sections):
+        if idx and sec.get('page_break_before'):
+            story.append(PageBreak())
+        stitle=str(sec.get('title') or 'Report')
+        rows=sec.get('rows') or []
+        columns=sec.get('columns') or []
+        summary=sec.get('summary') or ''
+        story.append(Paragraph(_pdf_escape(stitle), section_style))
+        if summary:
+            story.append(Paragraph(_pdf_escape(summary), note)); story.append(Spacer(1,.04*inch))
+        if not rows:
+            story.append(Paragraph('No items for this section.', note)); continue
+        if not columns:
+            continue
+        headers=[Paragraph(_pdf_escape(c.get('label') or c.get('key') or ''), head) for c in columns]
+        table_rows=[headers]
+        for row in rows:
+            vals=[]
+            for c in columns:
+                v=row.get(c.get('key'))
+                vals.append(Paragraph(_pdf_escape('-' if v in (None,'') else v), cell))
+            table_rows.append(vals)
+        widths=[]
+        for c in columns:
+            try: widths.append(float(c.get('width') or 1)*inch)
+            except: widths.append(1*inch)
+        total=sum(widths)
+        maxw=page_size[0]-.56*inch
+        if total>maxw:
+            scale=maxw/total; widths=[w*scale for w in widths]
+        t=Table(table_rows,colWidths=widths,repeatRows=1,hAlign='LEFT')
+        t.setStyle(TableStyle([
+            ('BACKGROUND',(0,0),(-1,0),colors.HexColor('#2F5D8C')),('TEXTCOLOR',(0,0),(-1,0),colors.white),
+            ('VALIGN',(0,0),(-1,-1),'TOP'),('GRID',(0,0),(-1,-1),.25,colors.HexColor('#D9E2EC')),
+            ('ROWBACKGROUNDS',(0,1),(-1,-1),[colors.white,colors.HexColor('#F7F9FC')]),
+            ('LEFTPADDING',(0,0),(-1,-1),3),('RIGHTPADDING',(0,0),(-1,-1),3),
+            ('TOPPADDING',(0,0),(-1,-1),3),('BOTTOMPADDING',(0,0),(-1,-1),3),
+        ]))
+        story.append(t); story.append(Spacer(1,.06*inch))
+
+    def page_num(canvas, doc_obj):
+        canvas.saveState(); canvas.setFont('Helvetica',6.5); canvas.setFillColor(colors.HexColor('#6B778C'))
+        canvas.drawRightString(page_size[0]-.28*inch,.16*inch,f'Page {doc_obj.page}'); canvas.restoreState()
+    doc.build(story,onFirstPage=page_num,onLaterPages=page_num)
+    buf.seek(0); return buf
+
+
+@app.route('/api/export/report-pdf', methods=['POST'])
+def export_report_pdf():
+    user, err = verify_logged_in(request.headers.get('Authorization'))
+    if err: return jsonify({'error': err[0]}), err[1]
+    data=request.get_json(silent=True) or {}
+    try:
+        buf=_build_report_pdf(data)
+    except ValueError as exc:
+        return jsonify({'error': str(exc)}), 400
+    except Exception as exc:
+        app.logger.exception('Report PDF generation failed')
+        return jsonify({'error': 'Could not generate report PDF'}), 500
+    filename=str(data.get('filename') or 'Schedule_Report.pdf')
+    safe=''.join(ch if ch.isalnum() or ch in ('-','_','.') else '_' for ch in filename)
+    if not safe.lower().endswith('.pdf'): safe += '.pdf'
+    return send_file(buf,mimetype='application/pdf',as_attachment=True,download_name=safe,max_age=0)
+
+
 @app.route('/api/account/password-changed', methods=['POST'])
 def password_changed():
     """Clear the first-login password-change requirement for the signed-in user."""

@@ -273,3 +273,6 @@ When an activity has a Current Start but no Current Finish, lookahead filtering 
 - Subcontractor role requires a company/trade; GC roles clear the company assignment.
 - Activity Admin privilege is preserved separately.
 - An admin cannot remove their own GC Admin access.
+
+## V38 - PDF Report Center
+Adds a GC/GC Admin Reports screen with downloadable PDFs for Schedule Changes, Trade Performance, Weekly Superintendent, Unassigned Activities, Two-Week Constraints, Completed This Week, Schedule Variance, and Subcontractor Meeting packets. Uses existing activity/history data; no Supabase migration is required.
