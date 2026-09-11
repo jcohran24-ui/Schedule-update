@@ -954,7 +954,17 @@ $('adminActivityForm')?.addEventListener('submit',async e=>{
   if(payload.current_start&&payload.current_finish&&payload.current_finish<payload.current_start){toast('Current finish cannot be before current start');return;}
   if(payload.original_start&&payload.original_finish&&payload.original_finish<payload.original_start){toast('Baseline finish cannot be before baseline start');return;}
   let error;
-  if(id){({error}=await sb.from('activities').update(payload).eq('id',id));}
+  if(id){
+    const existing=activities.find(x=>x.id===id);
+    // A scope flag belongs to the trade that raised it. If Activity Admin reassigns
+    // the activity to a different trade, clear the old flag and review stamp so
+    // the newly assigned subcontractor gets a clean item to review.
+    if(existing && (existing.company_id||null)!==(payload.company_id||null)){
+      payload.scope_issue=false;
+      payload.last_reviewed_at=null;
+    }
+    ({error}=await sb.from('activities').update(payload).eq('id',id));
+  }
   else {({error}=await sb.from('activities').insert(payload));}
   if(error){toast(error.message);return;}
   $('adminActivityModal').classList.add('hidden'); toast(id?'Activity saved':'Activity added'); await loadActivities(); renderAdminActivities();

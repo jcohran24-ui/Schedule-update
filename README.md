@@ -276,3 +276,7 @@ When an activity has a Current Start but no Current Finish, lookahead filtering 
 
 ## V38 - PDF Report Center
 Adds a GC/GC Admin Reports screen with downloadable PDFs for Schedule Changes, Trade Performance, Weekly Superintendent, Unassigned Activities, Two-Week Constraints, Completed This Week, Schedule Variance, and Subcontractor Meeting packets. Uses existing activity/history data; no Supabase migration is required.
+
+
+## V39 - Clear stale scope flags on reassignment
+When Activity Admin changes an activity from one company/trade to another, the old `scope_issue` flag is automatically cleared and `last_reviewed_at` is reset. This prevents a 'Not My Scope' flag raised by the previous subcontractor from following the activity to the newly assigned subcontractor. No Supabase migration is required.
