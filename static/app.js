@@ -357,6 +357,73 @@ function updateAdminSummary(){
   }
 }
 
+let backups=[];
+
+function fmtBackupDate(v){
+  if(!v) return '—';
+  const d=new Date(v); return isNaN(d)?String(v):d.toLocaleString([], {month:'numeric',day:'numeric',year:'numeric',hour:'numeric',minute:'2-digit'});
+}
+async function backupApi(path='',options={}){
+  if(!session?.access_token) throw new Error('You are not signed in');
+  const headers={...(options.headers||{}),'Authorization':`Bearer ${session.access_token}`};
+  if(options.body && !headers['Content-Type']) headers['Content-Type']='application/json';
+  const r=await fetch(`/api/admin/backups${path}`,{...options,headers});
+  if(!r.ok){let data={};try{data=await r.json();}catch(_e){}throw new Error(data.error||'Backup request failed');}
+  return r;
+}
+async function loadBackups(){
+  if(!isActivityAdmin() || !selectedProjectId) return;
+  const body=$('backupBody'); if(body) body.innerHTML='<tr><td colspan="6" class="muted">Loading backups…</td></tr>';
+  try{
+    const r=await backupApi(`?project_id=${encodeURIComponent(selectedProjectId)}`);
+    const data=await r.json(); backups=data.backups||[]; renderBackups();
+  }catch(err){backups=[]; if(body) body.innerHTML=`<tr><td colspan="6" class="muted">${esc(err.message)}</td></tr>`; if($('backupStatus')) $('backupStatus').textContent=err.message;}
+}
+function renderBackups(){
+  if($('adminBackupCount')) $('adminBackupCount').textContent=backups.length;
+  if($('adminOverviewBackups')) $('adminOverviewBackups').textContent=`${backups.length} saved ${backups.length===1?'backup':'backups'}`;
+  if(!$('backupBody')) return;
+  if(!backups.length){$('backupBody').innerHTML='<tr><td colspan="6" class="muted">No backups saved for this project yet.</td></tr>';return;}
+  $('backupBody').innerHTML=backups.map(b=>`<tr><td><strong>${esc(b.backup_name||'Backup')}</strong>${b.source_filename?`<div class="muted small">${esc(b.source_filename)}</div>`:''}</td><td>${b.backup_type==='pre_import'?'Pre-Import':'Manual'}</td><td>${b.activity_count??0}</td><td>${b.history_count??0}</td><td>${esc(fmtBackupDate(b.created_at))}</td><td><div class="backup-actions"><button class="ghost backup-download" data-id="${b.id}">Download</button><button class="ghost backup-restore" data-id="${b.id}">Restore</button><button class="danger backup-delete" data-id="${b.id}">Delete</button></div></td></tr>`).join('');
+  document.querySelectorAll('.backup-download').forEach(b=>b.onclick=()=>downloadBackup(b.dataset.id));
+  document.querySelectorAll('.backup-restore').forEach(b=>b.onclick=()=>restoreBackup(b.dataset.id));
+  document.querySelectorAll('.backup-delete').forEach(b=>b.onclick=()=>deleteBackup(b.dataset.id));
+}
+async function createBackup({type='manual',sourceFilename=null,silent=false}={}){
+  if(!selectedProjectId) throw new Error('Select a project first');
+  if(!silent && $('backupStatus')) $('backupStatus').textContent='Creating backup…';
+  const r=await backupApi('',{method:'POST',body:JSON.stringify({project_id:selectedProjectId,backup_type:type,source_filename:sourceFilename})});
+  const data=await r.json();
+  if(!silent){if($('backupStatus')) $('backupStatus').textContent='Backup created.';toast('Backup created');await loadBackups();}
+  return data.backup;
+}
+async function downloadBackup(id){
+  try{
+    const r=await backupApi(`/${id}/download`); const blob=await r.blob();
+    const cd=r.headers.get('Content-Disposition')||''; const m=/filename="?([^";]+)"?/i.exec(cd); const name=m?.[1]||'schedule-backup.json';
+    const url=URL.createObjectURL(blob); const a=document.createElement('a');a.href=url;a.download=name;document.body.appendChild(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(url),1000);
+  }catch(err){toast(err.message);}
+}
+async function restoreBackup(id){
+  const b=backups.find(x=>x.id===id); if(!b)return;
+  if(!confirm(`Restore "${b.backup_name}"?
+
+This will replace current activity records for this project with the saved snapshot. Activity history will be preserved.`))return;
+  if(!confirm('Confirm restore: any activities added after this backup will be removed. Continue?'))return;
+  try{
+    if($('backupStatus')) $('backupStatus').textContent='Restoring backup…';
+    const r=await backupApi(`/${id}/restore`,{method:'POST'}); const data=await r.json();
+    await loadReferenceData();await loadActivities();await loadBackups();
+    if($('backupStatus')) $('backupStatus').textContent=`Restore complete: ${data.restored_activities||0} activities restored.`;
+    toast('Backup restored');
+  }catch(err){if($('backupStatus')) $('backupStatus').textContent=err.message;toast(err.message);}
+}
+async function deleteBackup(id){
+  const b=backups.find(x=>x.id===id); if(!b)return;
+  if(!confirm(`Delete backup "${b.backup_name}"? This cannot be undone.`))return;
+  try{await backupApi(`/${id}`,{method:'DELETE'});toast('Backup deleted');await loadBackups();}catch(err){toast(err.message);}
+}
+
 let activeAdminTab='overview';
 function setAdminTab(tab){
   const btn=[...document.querySelectorAll('.admin-tab')].find(b=>b.dataset.adminTab===tab && !b.classList.contains('hidden'));
@@ -367,6 +434,7 @@ function setAdminTab(tab){
   try{localStorage.setItem('adminActiveTab',tab);}catch(e){}
   if(tab==='activities') renderAdminActivities();
   if(tab==='users') renderUsers();
+  if(tab==='backups') loadBackups();
   updateAdminSummary();
 }
 function initAdminTabs(){
@@ -376,6 +444,7 @@ function initAdminTabs(){
     document.querySelector('.nav-btn[data-view="history"]')?.click();
   });
   $('adminUserSearch')?.addEventListener('input',renderUsers);
+  $('createBackupBtn')?.addEventListener('click',async()=>{try{await createBackup();}catch(err){if($('backupStatus')) $('backupStatus').textContent=err.message;toast(err.message);}});
   let saved='overview'; try{saved=localStorage.getItem('adminActiveTab')||'overview';}catch(e){}
   setAdminTab(saved);
 }
@@ -383,7 +452,7 @@ function initAdminTabs(){
 function updateProjectLabel(){ const p=projects.find(x=>x.id===selectedProjectId); $('projectLabel').textContent=p?.project_name||'No project selected'; $('scheduleSubtitle').textContent=profile?.role==='sub' ? companyName(profile.company_id) : 'Live subcontractor updates'; updateAdminSummary(); }
 
 
-$('projectSelect')?.addEventListener('change',async e=>{selectedProjectId=e.target.value;updateProjectLabel();await loadActivities();});
+$('projectSelect')?.addEventListener('change',async e=>{selectedProjectId=e.target.value;updateProjectLabel();await loadActivities();if(activeAdminTab==='backups')await loadBackups();});
 $('refreshBtn')?.addEventListener('click',async()=>{await loadReferenceData();await loadActivities();toast('Schedule refreshed');});
 
 function isMeaningfulHistoryChange(h){
@@ -1041,6 +1110,10 @@ $('uploadBtn')?.addEventListener('click',async()=>{
   $('uploadBtn').disabled=true;$('uploadResult').textContent='Reading schedule...';
   try{
     const buf=await file.arrayBuffer(); const wb=XLSX.read(buf,{type:'array',cellDates:false}); const ws=wb.Sheets[wb.SheetNames[0]]; const raw=XLSX.utils.sheet_to_json(ws,{defval:null});
+    $('uploadResult').textContent='Creating pre-import backup…';
+    await createBackup({type:'pre_import',sourceFilename:file.name,silent:true});
+    $('uploadResult').textContent='Backup saved. Preparing schedule revision…';
+    // V42: Safe schedule revision import with automatic pre-import backup.
     // V41: Safe schedule revision import.
     // Existing activities refresh schedule-controlled setup fields only. Foreman-entered
     // current dates, status, percent, notes and history are intentionally preserved.
@@ -1112,7 +1185,8 @@ $('uploadBtn')?.addEventListener('click',async()=>{
     const {error:logErr}=await sb.from('schedule_uploads').insert({project_id:selectedProjectId,filename:file.name,rows_imported:rowsProcessed,uploaded_by:session.user.id}); if(logErr)console.warn(logErr);
     await loadReferenceData();await loadActivities();
     $('uploadResult').textContent=`Done: ${updated} existing activities refreshed; ${added} new activities added; ${skipped} rows skipped. Foreman updates were preserved.`;
-    toast('Schedule revision imported — foreman updates preserved');
+    toast('Schedule revision imported — backup saved and foreman updates preserved');
+    if(activeAdminTab==='backups') await loadBackups();
   }catch(err){console.error(err);$('uploadResult').textContent=`Import error: ${err.message||err}`;toast('Schedule import failed');}
   finally{$('uploadBtn').disabled=false;}
 });

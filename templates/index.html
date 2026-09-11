@@ -188,6 +188,7 @@
             <button class="admin-summary-card" type="button" data-admin-tab-jump="trades"><span>Companies / Trades</span><strong id="adminCompaniesCount">0</strong><small>Assigned companies</small></button>
             <button class="admin-summary-card" type="button" data-admin-tab-jump="activities"><span>Activities</span><strong id="adminActivitiesCount">0</strong><small id="adminUnassignedCount">0 unassigned</small></button>
             <button class="admin-summary-card" type="button" data-admin-tab-jump="import"><span>Schedule Import</span><strong>Import</strong><small>Excel / CSV</small></button>
+            <button class="admin-summary-card activity-admin-only" type="button" data-admin-tab-jump="backups"><span>Backups</span><strong id="adminBackupCount">0</strong><small>Restore points</small></button>
           </div>
 
           <div class="admin-tabs" role="tablist" aria-label="Admin sections">
@@ -196,6 +197,7 @@
             <button class="admin-tab gc-admin-only" type="button" data-admin-tab="trades">Trades</button>
             <button class="admin-tab activity-admin-only" type="button" data-admin-tab="activities">Activities</button>
             <button class="admin-tab activity-admin-only" type="button" data-admin-tab="import">Import</button>
+            <button class="admin-tab activity-admin-only" type="button" data-admin-tab="backups">Backups</button>
             <button class="admin-tab" type="button" data-admin-tab="settings">Settings</button>
           </div>
 
@@ -204,7 +206,8 @@
               <button class="admin-home-card gc-admin-only" type="button" data-admin-tab-jump="users"><div class="admin-home-icon">👥</div><div><h3>Users & Foremen</h3><p>Manage users, roles, companies, passwords, and active status.</p><span id="adminOverviewUsers">0 active users</span></div><b>›</b></button>
               <button class="admin-home-card gc-admin-only" type="button" data-admin-tab-jump="trades"><div class="admin-home-icon">🏗</div><div><h3>Companies & Trades</h3><p>Manage subcontractor companies and trade assignments.</p><span id="adminOverviewCompanies">0 companies</span></div><b>›</b></button>
               <button class="admin-home-card activity-admin-only" type="button" data-admin-tab-jump="activities"><div class="admin-home-icon">▤</div><div><h3>Activities</h3><p>Search, edit, reassign, add, or delete schedule activities.</p><span id="adminOverviewActivities">0 activities</span></div><b>›</b></button>
-              <button class="admin-home-card activity-admin-only" type="button" data-admin-tab-jump="import"><div class="admin-home-icon">⇧</div><div><h3>Schedule Import</h3><p>Upload the latest remaining schedule from Excel or CSV.</p><span>Import schedule data</span></div><b>›</b></button>
+              <button class="admin-home-card activity-admin-only" type="button" data-admin-tab-jump="import"><div class="admin-home-icon">⇧</div><div><h3>Schedule Import</h3><p>Upload the latest remaining schedule from Excel or CSV. A backup is created automatically first.</p><span>Import schedule data</span></div><b>›</b></button>
+              <button class="admin-home-card activity-admin-only" type="button" data-admin-tab-jump="backups"><div class="admin-home-icon">⟲</div><div><h3>Backups</h3><p>Create, download, restore, or remove project restore points.</p><span id="adminOverviewBackups">0 saved backups</span></div><b>›</b></button>
               <button class="admin-home-card" type="button" data-admin-tab-jump="settings"><div class="admin-home-icon">⚙</div><div><h3>Project Settings</h3><p>Projects, foreman email tools, and project-level controls.</p><span id="adminOverviewProject">Current project</span></div><b>›</b></button>
               <button class="admin-home-card" type="button" id="adminHistoryShortcut"><div class="admin-home-icon">↻</div><div><h3>Audit & History</h3><p>Review meaningful subcontractor schedule changes.</p><span>Open Change History</span></div><b>›</b></button>
             </div>
@@ -258,6 +261,21 @@
               <div class="admin-section-head"><div><h3>Upload Remaining Schedule</h3><p class="muted small">Excel or CSV. Recommended columns: Activity ID, Activity Name, Start, Finish, Duration, Trade/Company, Area.</p></div></div>
               <div class="admin-import-drop"><input id="scheduleFile" type="file" accept=".xlsx,.xls,.csv"><button id="uploadBtn" class="primary" type="button">Import Schedule</button></div>
               <div id="uploadResult" class="small"></div>
+            </div>
+          </div>
+
+
+          <div class="admin-tab-panel hidden" data-admin-panel="backups">
+            <div class="card span-2 activity-admin-only admin-section-card">
+              <div class="admin-section-head">
+                <div><h3>Project Backups</h3><p class="muted small">A snapshot is created automatically before every schedule import. You can also create a manual restore point at any time.</p></div>
+                <button id="createBackupBtn" class="primary" type="button">Create Backup</button>
+              </div>
+              <div class="backup-note">Restoring replaces the current activity records with the selected snapshot. Existing activity history is preserved.</div>
+              <p id="backupStatus" class="muted small"></p>
+              <div class="table-wrap inner">
+                <table><thead><tr><th>Backup</th><th>Type</th><th>Activities</th><th>History</th><th>Created</th><th>Actions</th></tr></thead><tbody id="backupBody"><tr><td colspan="6" class="muted">Open this tab to load backups.</td></tr></tbody></table>
+              </div>
             </div>
           </div>
 

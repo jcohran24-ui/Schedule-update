@@ -58,6 +58,77 @@ def verify_gc_admin(auth_header):
     return user, None
 
 
+def verify_activity_admin(auth_header):
+    if not auth_header or not auth_header.lower().startswith('bearer '):
+        return None, ('Missing login token', 401)
+    token = auth_header.split(' ', 1)[1].strip()
+    user_resp = requests.get(
+        f'{SUPABASE_URL}/auth/v1/user',
+        headers={'apikey': SUPABASE_ANON_KEY, 'Authorization': f'Bearer {token}'},
+        timeout=15,
+    )
+    if user_resp.status_code != 200:
+        return None, ('Invalid or expired login', 401)
+    user = user_resp.json()
+    uid = user.get('id')
+    if not uid:
+        return None, ('Invalid user', 401)
+    profile_resp = requests.get(
+        f'{SUPABASE_URL}/rest/v1/profiles',
+        params={'id': f'eq.{uid}', 'select': 'id,role,is_activity_admin,active'},
+        headers={
+            'apikey': SUPABASE_SERVICE_ROLE_KEY,
+            'Authorization': f'Bearer {SUPABASE_SERVICE_ROLE_KEY}',
+        },
+        timeout=15,
+    )
+    rows = profile_resp.json() if profile_resp.ok else []
+    if not rows or rows[0].get('active') is not True or rows[0].get('is_activity_admin') is not True:
+        return None, ('Activity Admin access required', 403)
+    return user, None
+
+
+def service_headers(prefer=None):
+    headers = {
+        'apikey': SUPABASE_SERVICE_ROLE_KEY,
+        'Authorization': f'Bearer {SUPABASE_SERVICE_ROLE_KEY}',
+        'Content-Type': 'application/json',
+    }
+    if prefer:
+        headers['Prefer'] = prefer
+    return headers
+
+
+def fetch_project_activities(project_id):
+    resp = requests.get(
+        f'{SUPABASE_URL}/rest/v1/activities',
+        params={'project_id': f'eq.{project_id}', 'select': '*', 'order': 'activity_code.asc'},
+        headers=service_headers(), timeout=30,
+    )
+    if not resp.ok:
+        raise RuntimeError('Could not read project activities')
+    return resp.json() or []
+
+
+def fetch_activity_history(activity_ids):
+    if not activity_ids:
+        return []
+    rows = []
+    # PostgREST URLs can get large, so fetch history in manageable ID batches.
+    for i in range(0, len(activity_ids), 100):
+        ids = activity_ids[i:i+100]
+        id_list = ','.join(ids)
+        resp = requests.get(
+            f'{SUPABASE_URL}/rest/v1/activity_history',
+            params={'activity_id': f'in.({id_list})', 'select': '*', 'order': 'changed_at.asc'},
+            headers=service_headers(), timeout=30,
+        )
+        if not resp.ok:
+            raise RuntimeError('Could not read activity history')
+        rows.extend(resp.json() or [])
+    return rows
+
+
 @app.route('/sw.js')
 def service_worker():
     response = send_from_directory(app.static_folder, 'sw.js', mimetype='application/javascript')
@@ -379,6 +450,196 @@ New South Construction
             if SMTP_USERNAME:
                 smtp.login(SMTP_USERNAME, SMTP_PASSWORD)
             smtp.send_message(msg)
+
+
+
+@app.route('/api/admin/backups', methods=['GET', 'POST'])
+def project_backups():
+    if not SUPABASE_SERVICE_ROLE_KEY:
+        return jsonify({'error': 'SUPABASE_SERVICE_ROLE_KEY is not configured'}), 500
+    user, err = verify_activity_admin(request.headers.get('Authorization'))
+    if err:
+        return jsonify({'error': err[0]}), err[1]
+
+    if request.method == 'GET':
+        project_id = (request.args.get('project_id') or '').strip()
+        if not project_id:
+            return jsonify({'error': 'project_id is required'}), 400
+        resp = requests.get(
+            f'{SUPABASE_URL}/rest/v1/project_backups',
+            params={
+                'project_id': f'eq.{project_id}',
+                'select': 'id,project_id,backup_name,backup_type,source_filename,activity_count,history_count,created_by,created_at',
+                'order': 'created_at.desc',
+                'limit': '20',
+            },
+            headers=service_headers(), timeout=20,
+        )
+        if not resp.ok:
+            return jsonify({'error': 'Could not load backups. Run the V42 backup migration in Supabase first.'}), 500
+        return jsonify({'backups': resp.json() or []})
+
+    data = request.get_json(silent=True) or {}
+    project_id = (data.get('project_id') or '').strip()
+    backup_type = (data.get('backup_type') or 'manual').strip()[:40]
+    source_filename = (data.get('source_filename') or '').strip()[:255] or None
+    backup_name = (data.get('backup_name') or '').strip()[:255]
+    if not project_id:
+        return jsonify({'error': 'project_id is required'}), 400
+
+    try:
+        activities = fetch_project_activities(project_id)
+        history = fetch_activity_history([a.get('id') for a in activities if a.get('id')])
+    except Exception as exc:
+        return jsonify({'error': str(exc)}), 500
+
+    if not backup_name:
+        prefix = 'Pre-Import Backup' if backup_type == 'pre_import' else 'Manual Backup'
+        backup_name = f"{prefix} - {datetime.now().strftime('%m/%d/%Y %I:%M %p')}"
+
+    payload = {
+        'project_id': project_id,
+        'backup_name': backup_name,
+        'backup_type': backup_type,
+        'source_filename': source_filename,
+        'activity_count': len(activities),
+        'history_count': len(history),
+        'created_by': user.get('id'),
+        'snapshot': {'activities': activities, 'history': history},
+    }
+    resp = requests.post(
+        f'{SUPABASE_URL}/rest/v1/project_backups',
+        headers=service_headers('return=representation'), json=payload, timeout=30,
+    )
+    if not resp.ok:
+        return jsonify({'error': 'Could not create backup. Run the V42 backup migration in Supabase first.'}), 500
+    created = (resp.json() or [{}])[0]
+
+    # Keep only the newest 20 backups per project.
+    old = requests.get(
+        f'{SUPABASE_URL}/rest/v1/project_backups',
+        params={'project_id': f'eq.{project_id}', 'select': 'id', 'order': 'created_at.desc', 'offset': '20'},
+        headers=service_headers(), timeout=20,
+    )
+    if old.ok:
+        for row in old.json() or []:
+            bid = row.get('id')
+            if bid:
+                requests.delete(f'{SUPABASE_URL}/rest/v1/project_backups', params={'id': f'eq.{bid}'}, headers=service_headers(), timeout=15)
+
+    return jsonify({'ok': True, 'backup': {k: created.get(k) for k in ('id','project_id','backup_name','backup_type','source_filename','activity_count','history_count','created_at')}})
+
+
+@app.route('/api/admin/backups/<backup_id>/download', methods=['GET'])
+def download_project_backup(backup_id):
+    if not SUPABASE_SERVICE_ROLE_KEY:
+        return jsonify({'error': 'SUPABASE_SERVICE_ROLE_KEY is not configured'}), 500
+    _, err = verify_activity_admin(request.headers.get('Authorization'))
+    if err:
+        return jsonify({'error': err[0]}), err[1]
+    resp = requests.get(
+        f'{SUPABASE_URL}/rest/v1/project_backups',
+        params={'id': f'eq.{backup_id}', 'select': '*'},
+        headers=service_headers(), timeout=20,
+    )
+    rows = resp.json() if resp.ok else []
+    if not rows:
+        return jsonify({'error': 'Backup not found'}), 404
+    b = rows[0]
+    export = {
+        'backup_id': b.get('id'),
+        'project_id': b.get('project_id'),
+        'backup_name': b.get('backup_name'),
+        'backup_type': b.get('backup_type'),
+        'source_filename': b.get('source_filename'),
+        'created_at': b.get('created_at'),
+        'activity_count': b.get('activity_count'),
+        'history_count': b.get('history_count'),
+        'snapshot': b.get('snapshot') or {},
+    }
+    import json
+    content = json.dumps(export, indent=2, default=str).encode('utf-8')
+    filename = f"schedule-backup-{datetime.now().strftime('%Y%m%d-%H%M%S')}.json"
+    return send_file(io.BytesIO(content), mimetype='application/json', as_attachment=True, download_name=filename)
+
+
+@app.route('/api/admin/backups/<backup_id>/restore', methods=['POST'])
+def restore_project_backup(backup_id):
+    if not SUPABASE_SERVICE_ROLE_KEY:
+        return jsonify({'error': 'SUPABASE_SERVICE_ROLE_KEY is not configured'}), 500
+    user, err = verify_activity_admin(request.headers.get('Authorization'))
+    if err:
+        return jsonify({'error': err[0]}), err[1]
+
+    resp = requests.get(
+        f'{SUPABASE_URL}/rest/v1/project_backups',
+        params={'id': f'eq.{backup_id}', 'select': '*'},
+        headers=service_headers(), timeout=20,
+    )
+    rows = resp.json() if resp.ok else []
+    if not rows:
+        return jsonify({'error': 'Backup not found'}), 404
+    b = rows[0]
+    project_id = b.get('project_id')
+    snapshot = b.get('snapshot') or {}
+    saved = snapshot.get('activities') or []
+    saved_ids = {str(a.get('id')) for a in saved if a.get('id')}
+
+    # Perform the activity writes as the signed-in Activity Admin (not the service role)
+    # so the existing field-protection trigger sees the real user's auth.uid().
+    auth_header = request.headers.get('Authorization') or ''
+    user_token = auth_header.split(' ', 1)[1].strip()
+    user_headers = {
+        'apikey': SUPABASE_ANON_KEY,
+        'Authorization': f'Bearer {user_token}',
+        'Content-Type': 'application/json',
+    }
+    try:
+        current = fetch_project_activities(project_id)
+        # Remove activities that were added after the snapshot.
+        for a in current:
+            aid = str(a.get('id') or '')
+            if aid and aid not in saved_ids:
+                d = requests.delete(
+                    f'{SUPABASE_URL}/rest/v1/activities',
+                    params={'id': f'eq.{aid}'}, headers=user_headers, timeout=20,
+                )
+                if not d.ok:
+                    raise RuntimeError(f"Could not remove post-backup activity {a.get('activity_code') or aid}")
+
+        # Restore saved activity records in batches. Activity history is intentionally retained;
+        # restoring an import normally changes only schedule-controlled fields and therefore
+        # does not generate foreman-history noise.
+        for i in range(0, len(saved), 100):
+            part = saved[i:i+100]
+            r = requests.post(
+                f'{SUPABASE_URL}/rest/v1/activities',
+                params={'on_conflict': 'id'},
+                headers={**user_headers, 'Prefer': 'resolution=merge-duplicates,return=minimal'},
+                json=part, timeout=30,
+            )
+            if not r.ok:
+                raise RuntimeError('Could not restore saved activities')
+    except Exception as exc:
+        return jsonify({'error': str(exc)}), 500
+
+    return jsonify({'ok': True, 'restored_activities': len(saved), 'history_preserved': True, 'restored_by': user.get('id')})
+
+
+@app.route('/api/admin/backups/<backup_id>', methods=['DELETE'])
+def delete_project_backup(backup_id):
+    if not SUPABASE_SERVICE_ROLE_KEY:
+        return jsonify({'error': 'SUPABASE_SERVICE_ROLE_KEY is not configured'}), 500
+    _, err = verify_activity_admin(request.headers.get('Authorization'))
+    if err:
+        return jsonify({'error': err[0]}), err[1]
+    resp = requests.delete(
+        f'{SUPABASE_URL}/rest/v1/project_backups',
+        params={'id': f'eq.{backup_id}'}, headers=service_headers(), timeout=20,
+    )
+    if not resp.ok:
+        return jsonify({'error': 'Could not delete backup'}), 500
+    return jsonify({'ok': True})
 
 
 @app.route('/api/admin/email-foremen', methods=['POST'])

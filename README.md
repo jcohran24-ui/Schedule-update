@@ -294,3 +294,15 @@ When Activity Admin changes an activity from one company/trade to another, the o
 ## V41 — Safe schedule revision imports
 
 Updated schedule imports now reconcile by Project + Activity ID instead of skipping existing activities. Existing activities refresh schedule-controlled fields only: activity description, area, baseline start, baseline finish, duration, trade/company assignment, and source upload. Foreman-entered Current Start, Current Finish, Status, Percent Complete, Notes, and activity history are preserved. New Activity IDs are added with blank current dates. If an import changes the assigned trade/company, the old trade's scope flag and review timestamp are cleared so the newly assigned subcontractor receives a clean activity to review.
+
+## V42 — Automatic backups and restore points
+
+- Added Admin > Backups for the Activity Admin.
+- Automatically creates a full project snapshot before every schedule import; the import is stopped if the backup cannot be created.
+- Manual backups can be created at any time.
+- Backups include all project activity records plus a copy of activity history for off-app/download reference.
+- Backups can be downloaded as JSON, restored, or deleted.
+- Restore returns activity records to the saved snapshot and removes activities added after that snapshot.
+- Existing activity history is preserved during restore.
+- Keeps the newest 20 backups per project automatically.
+- Requires running `backup_migration.sql` once in Supabase before using V42 backup features.

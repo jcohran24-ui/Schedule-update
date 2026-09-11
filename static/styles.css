@@ -166,3 +166,8 @@
 .report-card{display:grid;grid-template-columns:48px 1fr 22px;gap:13px;align-items:center;text-align:left;background:#fff;border:1px solid #e1e7ef;border-radius:15px;padding:17px;color:#172033;min-height:122px;box-shadow:0 1px 2px rgba(16,24,40,.04)}
 .report-card:hover{border-color:#afd0e8;background:#fbfdff;transform:translateY(-1px)}.report-card h3{margin:0 0 5px;font-size:15px}.report-card p{margin:0;color:#667085;font-size:12px;line-height:1.45}.report-card>b{font-size:28px;color:#98a2b3}.report-icon{width:48px;height:48px;border-radius:13px;background:#eef7ff;color:#155d96;display:grid;place-items:center;font-size:22px;font-weight:850}.report-modal-card{max-width:560px}.report-definition{margin:0;padding:11px 12px;border-radius:10px;background:#f7f9fc;border:1px solid #e4e9ef;color:#526071;font-size:12px;line-height:1.45}
 @media(max-width:760px){.reports-grid{grid-template-columns:1fr}.report-card{grid-template-columns:42px 1fr 20px;padding:14px;min-height:108px}.report-icon{width:42px;height:42px}.report-modal-card{width:100%}.gc-mobile-nav{grid-template-columns:repeat(5,1fr)}.gc-mobile-nav-btn{font-size:9px}}
+
+/* V42 backup manager */
+.backup-note{padding:10px 12px;border:1px solid var(--border);border-radius:10px;background:rgba(127,127,127,.06);font-size:.9rem;margin:10px 0 6px}
+.backup-actions{display:flex;gap:6px;flex-wrap:wrap}
+@media(max-width:760px){.backup-actions button{flex:1 1 auto}.admin-summary{grid-template-columns:repeat(2,minmax(0,1fr))}}
