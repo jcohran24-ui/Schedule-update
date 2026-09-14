@@ -306,3 +306,7 @@ Updated schedule imports now reconcile by Project + Activity ID instead of skipp
 - Existing activity history is preserved during restore.
 - Keeps the newest 20 backups per project automatically.
 - Requires running `backup_migration.sql` once in Supabase before using V42 backup features.
+
+
+## V43 - Subcontractor Meeting Report Trade Sort
+Subcontractor Meeting Report sections are now sorted alphabetically by trade, then by current date text/activity ID within each trade. No Supabase migration required.
