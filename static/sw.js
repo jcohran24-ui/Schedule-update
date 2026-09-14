@@ -1,4 +1,4 @@
-const CACHE_NAME='schedule-update-v43';
+const CACHE_NAME='schedule-update-v44';
 const APP_SHELL = [
   '/',
   '/static/styles.css',

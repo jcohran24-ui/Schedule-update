@@ -1379,7 +1379,7 @@ refreshInstallButtons();
 // V38 - PDF Report Center
 const REPORT_INFO={
   changes:{title:'Schedule Changes Report',help:'Meaningful schedule changes saved by subcontractor users.',period:true,trade:true,definition:'Includes activity description, who changed it, date/time, old vs. new start/finish/status, and the saved note.'},
-  'trade-performance':{title:'Trade Performance Report',help:'Current schedule accountability by company/trade.',period:false,trade:true,definition:'Shows remaining work, past due, in progress, completed this week, 4-week activities, changes this week, and average finish variance.'},
+  'trade-performance':{title:'Trade Performance Report',help:'Current schedule accountability by company/trade.',period:false,trade:true,definition:'Select one or more trades. Shows performance totals plus activity-level detail with dates, status, variance, and notes.'},
   'weekly-super':{title:'Weekly Superintendent Report',help:'Project-wide weekly field schedule summary.',period:false,trade:false,definition:'Includes completed and started work this week, past due work, upcoming two-week work, constraints, and schedule risks.'},
   unassigned:{title:'Unassigned Activities Report',help:'Remaining work without a responsible company/trade.',period:false,trade:false,definition:'Shows every remaining unassigned activity with baseline/current dates, status, area, and notes.'},
   constraints:{title:'Two-Week Constraint Report',help:'Near-term work that needs attention.',period:false,trade:true,definition:'Includes past due or next-14-day work with notes, scope flags, delayed/on-hold status, missing current dates, or late finish variance.'},
@@ -1443,8 +1443,11 @@ function periodBounds(period){
 function reportFileName(title){return title.replace(/[^A-Za-z0-9]+/g,'_').replace(/^_|_$/g,'')+'.pdf';}
 function openReportModal(type){
  const info=REPORT_INFO[type];if(!info)return;$('reportType').value=type;$('reportModalTitle').textContent=info.title;$('reportModalHelp').textContent=info.help;$('reportDefinition').textContent=info.definition;
- $('reportTradeWrap').classList.toggle('hidden',!info.trade);$('reportPeriodWrap').classList.toggle('hidden',!info.period);
- $('reportTrade').innerHTML='<option value="">All Trades</option>'+companies.map(c=>`<option value="${c.id}">${esc(c.company_name)}</option>`).join('');$('reportModal').classList.remove('hidden');
+ const isMulti=type==='trade-performance';
+ $('reportTradeWrap').classList.toggle('hidden',!info.trade||isMulti);$('reportTradeMultiWrap')?.classList.toggle('hidden',!isMulti);$('reportPeriodWrap').classList.toggle('hidden',!info.period);
+ $('reportTrade').innerHTML='<option value="">All Trades</option>'+companies.map(c=>`<option value="${c.id}">${esc(c.company_name)}</option>`).join('');
+ if($('reportTradeMulti')) $('reportTradeMulti').innerHTML=companies.map(c=>`<label class="report-trade-option"><input type="checkbox" value="${c.id}"><span>${esc(c.company_name)}</span></label>`).join('');
+ $('reportModal').classList.remove('hidden');
 }
 function closeReportModal(){$('reportModal')?.classList.add('hidden');}
 document.querySelectorAll('.report-card').forEach(b=>b.addEventListener('click',()=>openReportModal(b.dataset.report)));
@@ -1457,16 +1460,23 @@ async function buildReportPayload(type,tradeId,period){
  const completedHist=weekHistory.filter(h=>h.new_status==='Complete'&&h.old_status!=='Complete');
  const startedHist=weekHistory.filter(h=>(!h.old_start&&h.new_start)||(h.old_status==='Not Started'&&['In Progress','Starting Soon'].includes(h.new_status)));
  const subWeekChanges=weekHistory.filter(h=>subIds.has(h.changed_by)&&isMeaningfulHistoryChange(h));
- const tradeLabel=tradeId?companyName(tradeId):'All Trades';
+ const tradeIds=Array.isArray(tradeId)?tradeId:(tradeId?[tradeId]:[]);
+ const tradeLabel=Array.isArray(tradeId)?(tradeIds.length?tradeIds.map(companyName).join(', '):'All Trades'):(tradeId?companyName(tradeId):'All Trades');
  let sections=[],subtitle=tradeLabel;
  if(type==='changes'){
    const {start,end}=periodBounds(period);subtitle=`${tradeLabel} | ${dateLabel(start)} - ${dateLabel(end)}`;
    const rows=history.filter(h=>subIds.has(h.changed_by)&&isMeaningfulHistoryChange(h)&&historyWithin(h,start,end)).filter(h=>reportTradeMatch(activities.find(a=>a.id===h.activity_id),tradeId)).map(h=>{const a=activities.find(x=>x.id===h.activity_id);return {date:new Date(h.changed_at).toLocaleString(),trade:companyName(a?.company_id),id:a?.activity_code||'',activity:a?.activity_name||'',user:profileName(h.changed_by),startchange:`${reportDate(h.old_start)} -> ${reportDate(h.new_start)}`,finishchange:`${reportDate(h.old_finish)} -> ${reportDate(h.new_finish)}`,statuschange:`${h.old_status||'—'} -> ${h.new_status||'—'}`,notes:h.comment||''};});
    sections=[section('Subcontractor Schedule Changes',['date','trade','id','activity','user','startchange','finishchange','statuschange','notes'],rows,`${rows.length} meaningful subcontractor change${rows.length===1?'':'s'}.`)];
  } else if(type==='trade-performance'){
-   const tradeList=tradeId?companies.filter(c=>c.id===tradeId):companies;
+   const tradeList=tradeIds.length?companies.filter(c=>tradeIds.includes(c.id)):companies;
    const rows=tradeList.map(c=>{const aa=activities.filter(a=>a.company_id===c.id),remaining=aa.filter(a=>a.status!=='Complete'),vars=remaining.map(a=>workdayVariance(a.original_finish,a.current_finish)).filter(v=>v!==null);return {trade:c.company_name,remaining:remaining.length,pastdue:remaining.filter(isPastDueActivity).length,inprogress:remaining.filter(a=>a.status==='In Progress').length,completed:new Set(completedHist.filter(h=>aa.some(a=>a.id===h.activity_id)).map(h=>h.activity_id)).size,lookahead:fourWeekRows(c.id).length,changes:subWeekChanges.filter(h=>aa.some(a=>a.id===h.activity_id)).length,avgvar:vars.length?varianceText(Math.round(vars.reduce((x,y)=>x+y,0)/vars.length)):'—'};}).filter(r=>r.remaining||r.completed||r.changes);
-   sections=[section('Trade Performance',['trade','remaining','pastdue','inprogress','completed','lookahead','changes','avgvar'],rows,'Counts use the live schedule; completed and changes use the current Monday-Sunday week.')];
+   sections=[section('Trade Performance Summary',['trade','remaining','pastdue','inprogress','completed','lookahead','changes','avgvar'],rows,'Counts use the live schedule; completed and changes use the current Monday-Sunday week.')];
+   tradeList.forEach(c=>{
+     const completedThisWeek=new Set(completedHist.filter(h=>activities.some(a=>a.id===h.activity_id&&a.company_id===c.id)).map(h=>h.activity_id));
+     const detail=activities.filter(a=>a.company_id===c.id&&(a.status!=='Complete'||completedThisWeek.has(a.id))).map(a=>({...activityCommon(a),startvar:varianceText(workdayVariance(a.original_start,a.current_start)),finishvar:varianceText(workdayVariance(a.original_finish,a.current_finish))})).sort((a,b)=>(a.current||'').localeCompare(b.current||'')||(a.id||'').localeCompare(b.id||'',undefined,{numeric:true}));
+     if(detail.length)sections.push(section(`Activity Detail - ${c.company_name}`,['id','area','activity','baseline','current','startvar','finishvar','status','notes'],detail,`${detail.length} active/completed-this-week activit${detail.length===1?'y':'ies'}.`));
+   });
+   subtitle=`${tradeLabel} | Week of ${dateLabel(weekStart)}`;
  } else if(type==='unassigned'){
    const rows=activities.filter(a=>a.status!=='Complete'&&!a.company_id).sort(chronologicalSort).map(a=>activityCommon(a));
    sections=[section('Unassigned Remaining Activities',['id','area','activity','baseline','current','status','notes'],rows,`${rows.length} remaining activit${rows.length===1?'y':'ies'} without an assigned trade.`)];
@@ -1497,7 +1507,7 @@ async function buildReportPayload(type,tradeId,period){
  return {project_name:$('projectLabel')?.textContent||'CTCC Oasis',title:info.title,subtitle,sections,filename:reportFileName(info.title)};
 }
 $('reportForm')?.addEventListener('submit',async e=>{
- e.preventDefault();const type=$('reportType').value,tradeId=$('reportTrade').value||'',period=$('reportPeriod').value||'week',btn=$('generateReportBtn');
+ e.preventDefault();const type=$('reportType').value,tradeId=type==='trade-performance'?Array.from(document.querySelectorAll('#reportTradeMulti input:checked')).map(x=>x.value):($('reportTrade').value||''),period=$('reportPeriod').value||'week',btn=$('generateReportBtn');
  if(btn){btn.disabled=true;btn.textContent='Generating…';}
  try{const payload=await buildReportPayload(type,tradeId,period);const r=await fetch('/api/export/report-pdf',{method:'POST',headers:{'Content-Type':'application/json','Authorization':`Bearer ${session.access_token}`},body:JSON.stringify(payload)});if(!r.ok){const d=await r.json().catch(()=>({}));throw new Error(d.error||'Could not generate report');}const blob=await r.blob(),url=URL.createObjectURL(blob),a=document.createElement('a');a.href=url;a.download=payload.filename;document.body.appendChild(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(url),1000);closeReportModal();toast('Report PDF downloaded');}catch(err){toast(err.message||'Could not generate report');}finally{if(btn){btn.disabled=false;btn.textContent='Generate PDF';}}
 });

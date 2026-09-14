@@ -310,3 +310,11 @@ Updated schedule imports now reconcile by Project + Activity ID instead of skipp
 
 ## V43 - Subcontractor Meeting Report Trade Sort
 Subcontractor Meeting Report sections are now sorted alphabetically by trade, then by current date text/activity ID within each trade. No Supabase migration required.
+
+
+## V44 - Trade Performance Multi-Trade Activity Detail
+- Trade Performance Report now supports selecting multiple trades with checkboxes.
+- Leaving all trades unchecked generates the report for all trades.
+- Adds an activity-detail section for each selected trade with Activity ID, area, description, baseline/current dates, start/finish variance, status, and notes.
+- Summary metrics remain at the front of the report.
+- No Supabase migration required.
