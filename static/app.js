@@ -1465,7 +1465,7 @@ const REPORT_INFO={
   constraints:{title:'Two-Week Constraint Report',help:'Near-term work that needs attention.',period:false,trade:true,definition:'Includes past due or next-14-day work with notes, scope flags, delayed/on-hold status, missing current dates, or late finish variance.'},
   completed:{title:'Completed This Week Report',help:'Activities moved to Complete during the current week.',period:false,trade:true,definition:'Uses schedule change history for the current Monday-Sunday week and groups completed work by trade.'},
   variance:{title:'Schedule Variance Report',help:'Baseline dates compared with entered current dates.',period:false,trade:true,definition:'Shows start and finish variance in Monday-Friday workdays and sorts the largest delays first.'},
-  'sub-meeting':{title:'Subcontractor Meeting Report',help:'One packet for weekly subcontractor coordination.',period:false,trade:true,definition:'Combines past due activities, 4-week look-ahead, this week’s subcontractor changes, and two-week constraints.'}
+  'sub-meeting':{title:'Subcontractor Meeting Report',help:'One packet for weekly subcontractor coordination.',period:false,trade:true,definition:'Choose All Trades or select multiple trades. Combines past due activities, 4-week look-ahead, this week’s subcontractor changes, and two-week constraints.'}
 };
 function localDateOnly(d=new Date()){const x=new Date(d);x.setHours(0,0,0,0);return x;}
 function mondayOfWeek(d=new Date()){const x=localDateOnly(d);const day=x.getDay();x.setDate(x.getDate()-((day+6)%7));return x;}
@@ -1482,7 +1482,7 @@ function varianceText(n){if(n===null||n===undefined)return '—';return n===0?'0
 function fourWeekRows(tradeId=''){
   const today=localDateOnly(),h=new Date(today);h.setDate(h.getDate()+28);
   return activities.filter(a=>{
-    if(a.status==='Complete')return false;if(tradeId&&a.company_id!==tradeId)return false;
+    if(a.status==='Complete')return false;if(!reportTradeMatch(a,tradeId))return false;
     const sv=effectiveScheduleStart(a),fv=effectiveScheduleFinish(a);if(!sv||!fv)return false;
     const sd=new Date(sv+'T12:00:00'),fd=new Date(fv+'T12:00:00');
     return (a.status==='Not Started'&&sd<today)||(sd<=h&&fd>=today);
@@ -1491,7 +1491,7 @@ function fourWeekRows(tradeId=''){
 function twoWeekBaseRows(tradeId=''){
   const today=localDateOnly(),h=new Date(today);h.setDate(h.getDate()+14);
   return activities.filter(a=>{
-    if(a.status==='Complete')return false;if(tradeId&&a.company_id!==tradeId)return false;
+    if(a.status==='Complete')return false;if(!reportTradeMatch(a,tradeId))return false;
     const sv=effectiveScheduleStart(a),fv=effectiveScheduleFinish(a);if(!sv||!fv)return false;
     const sd=new Date(sv+'T12:00:00'),fd=new Date(fv+'T12:00:00');
     return (a.status==='Not Started'&&sd<today)||(sd<=h&&fd>=today);
@@ -1510,7 +1510,10 @@ async function loadReportHistory(){
   if(error)throw new Error(error.message);return data||[];
 }
 function historyWithin(h,start,end){const d=new Date(h.changed_at);return d>=start&&d<new Date(end.getTime()+86400000);}
-function reportTradeMatch(a,tradeId){return !tradeId||a?.company_id===tradeId;}
+function reportTradeMatch(a,tradeId){
+ const ids=Array.isArray(tradeId)?tradeId.filter(Boolean):(tradeId?[tradeId]:[]);
+ return !ids.length||ids.includes(a?.company_id);
+}
 function activityCommon(a){return {trade:companyName(a.company_id),id:a.activity_code||'',area:a.area||'',activity:a.activity_name||'',baseline:`${reportDate(a.original_start)} - ${reportDate(a.original_finish)}`,current:`${reportDate(a.current_start)} - ${reportDate(a.current_finish)}`,status:a.status||'',notes:a.notes||''};}
 function cols(keys){
  const map={trade:['Trade',1.05],id:['ID',.62],area:['Area',.55],activity:['Activity Description',2.15],baseline:['Baseline',1.2],current:['Current',1.2],status:['Status',.8],notes:['Notes',2.3],reason:['Constraint / Risk',1.65],startvar:['Start Var.',.7],finishvar:['Finish Var.',.75],date:['Date',.92],user:['Changed By',1.05],startchange:['Start Change',1.45],finishchange:['Finish Change',1.45],statuschange:['Status Change',1.25],remaining:['Remaining',.7],pastdue:['Past Due',.65],inprogress:['In Progress',.72],completed:['Completed Wk',.78],lookahead:['4-Week',.62],changes:['Changes Wk',.75],avgvar:['Avg Finish Var.',.85]};
@@ -1523,10 +1526,20 @@ function periodBounds(period){
 function reportFileName(title){return title.replace(/[^A-Za-z0-9]+/g,'_').replace(/^_|_$/g,'')+'.pdf';}
 function openReportModal(type){
  const info=REPORT_INFO[type];if(!info)return;$('reportType').value=type;$('reportModalTitle').textContent=info.title;$('reportModalHelp').textContent=info.help;$('reportDefinition').textContent=info.definition;
- const isMulti=type==='trade-performance';
+ const isMulti=['trade-performance','sub-meeting'].includes(type);
  $('reportTradeWrap').classList.toggle('hidden',!info.trade||isMulti);$('reportTradeMultiWrap')?.classList.toggle('hidden',!isMulti);$('reportPeriodWrap').classList.toggle('hidden',!info.period);
  $('reportTrade').innerHTML='<option value="">All Trades</option>'+companies.map(c=>`<option value="${c.id}">${esc(c.company_name)}</option>`).join('');
- if($('reportTradeMulti')) $('reportTradeMulti').innerHTML=companies.map(c=>`<label class="report-trade-option"><input type="checkbox" value="${c.id}"><span>${esc(c.company_name)}</span></label>`).join('');
+ if($('reportTradeMulti')) {
+   $('reportTradeMulti').innerHTML=`<label class="report-trade-option report-trade-all"><input type="checkbox" value="__all__" checked><span><b>All Trades</b></span></label>`+companies.map(c=>`<label class="report-trade-option"><input type="checkbox" value="${c.id}"><span>${esc(c.company_name)}</span></label>`).join('');
+   const boxes=Array.from(document.querySelectorAll('#reportTradeMulti input'));
+   const allBox=boxes.find(x=>x.value==='__all__');
+   boxes.forEach(box=>box.addEventListener('change',()=>{
+     if(box.value==='__all__'&&box.checked){boxes.filter(x=>x!==box).forEach(x=>x.checked=false);}
+     else if(box.value!=='__all__'&&box.checked&&allBox){allBox.checked=false;}
+     const anySpecific=boxes.some(x=>x.value!=='__all__'&&x.checked);
+     if(!anySpecific&&allBox)allBox.checked=true;
+   }));
+ }
  $('reportModal').classList.remove('hidden');
 }
 function closeReportModal(){$('reportModal')?.classList.add('hidden');}
@@ -1587,7 +1600,7 @@ async function buildReportPayload(type,tradeId,period){
  return {project_name:$('projectLabel')?.textContent||'CTCC Oasis',title:info.title,subtitle,sections,filename:reportFileName(info.title)};
 }
 $('reportForm')?.addEventListener('submit',async e=>{
- e.preventDefault();const type=$('reportType').value,tradeId=type==='trade-performance'?Array.from(document.querySelectorAll('#reportTradeMulti input:checked')).map(x=>x.value):($('reportTrade').value||''),period=$('reportPeriod').value||'week',btn=$('generateReportBtn');
+ e.preventDefault();const type=$('reportType').value,isMulti=['trade-performance','sub-meeting'].includes(type),selected=isMulti?Array.from(document.querySelectorAll('#reportTradeMulti input:checked')).map(x=>x.value):[],tradeId=isMulti?(selected.includes('__all__')?[]:selected):($('reportTrade').value||''),period=$('reportPeriod').value||'week',btn=$('generateReportBtn');
  if(btn){btn.disabled=true;btn.textContent='Generating…';}
  try{const payload=await buildReportPayload(type,tradeId,period);const r=await fetch('/api/export/report-pdf',{method:'POST',headers:{'Content-Type':'application/json','Authorization':`Bearer ${session.access_token}`},body:JSON.stringify(payload)});if(!r.ok){const d=await r.json().catch(()=>({}));throw new Error(d.error||'Could not generate report');}const blob=await r.blob(),url=URL.createObjectURL(blob),a=document.createElement('a');a.href=url;a.download=payload.filename;document.body.appendChild(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(url),1000);closeReportModal();toast('Report PDF downloaded');}catch(err){toast(err.message||'Could not generate report');}finally{if(btn){btn.disabled=false;btn.textContent='Generate PDF';}}
 });

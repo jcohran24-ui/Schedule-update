@@ -326,3 +326,10 @@ Subcontractor Meeting Report sections are now sorted alphabetically by trade, th
 - Recovery links open the app and let the user choose a new 8+ character password.
 - No database migration is required.
 - In Supabase Authentication > URL Configuration, make sure the deployed app URL is allowed as a redirect URL so recovery links can return users to the app.
+
+
+## V46 - Subcontractor Meeting Multi-Trade Selection
+- Subcontractor Meeting Report now uses multi-select trade checkboxes.
+- Choose **All Trades** or select any combination of trades before generating the PDF.
+- All four meeting sections are filtered to the selected trades and remain sorted by trade.
+- No Supabase migration required.
