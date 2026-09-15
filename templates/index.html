@@ -33,6 +33,7 @@
       <label>Email<input id="loginEmail" type="email" autocomplete="username" required></label>
       <label>Password<input id="loginPassword" type="password" autocomplete="current-password" required></label>
       <button class="primary" type="submit">Sign In</button>
+      <button id="forgotPasswordBtn" class="ghost" type="button">Forgot Password?</button>
       <button class="ghost install-app-btn hidden" type="button">Install App</button>
       <p id="loginError" class="error"></p>
     </form>
@@ -51,6 +52,20 @@
     </form>
   </section>
 
+
+  <section id="selfPasswordScreen" class="screen centered hidden">
+    <form id="selfPasswordForm" class="card narrow">
+      <div class="brand-mark">TS</div>
+      <h1 id="selfPasswordTitle">Reset Your Password</h1>
+      <p id="selfPasswordHelp" class="muted">Enter a new password for your account.</p>
+      <label>New Password<input id="selfNewPassword" type="password" minlength="8" autocomplete="new-password" placeholder="At least 8 characters" required></label>
+      <label>Confirm New Password<input id="selfConfirmPassword" type="password" minlength="8" autocomplete="new-password" placeholder="Enter it again" required></label>
+      <button class="primary" type="submit">Save New Password</button>
+      <p id="selfPasswordError" class="error"></p>
+      <button id="selfPasswordCancel" class="ghost" type="button">Cancel</button>
+    </form>
+  </section>
+
   <section id="appScreen" class="hidden">
     <header class="topbar">
       <div>
@@ -59,6 +74,7 @@
       </div>
       <div class="top-actions">
         <span id="userBadge" class="badge"></span>
+        <button id="changeMyPasswordBtn" class="ghost" type="button">Change Password</button>
         <button class="ghost install-app-btn hidden" type="button">Install App</button>
         <button id="logoutBtn" class="ghost">Sign Out</button>
       </div>

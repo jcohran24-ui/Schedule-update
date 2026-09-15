@@ -23,6 +23,7 @@ let subStatusFilter = '';
 let saveAndNextRequested = false;
 let gcMobileIssuesOnly = false;
 let subChangedActivityIds = new Set();
+let selfPasswordMode = 'change';
 
 const $ = (id) => document.getElementById(id);
 const fmt = (d) => d ? new Date(d + 'T12:00:00').toLocaleDateString() : '—';
@@ -187,6 +188,11 @@ async function init(){
   const s = await ensureSessionFresh();
   if(s) await enterApp(s);
   sb.auth.onAuthStateChange(async (event,sess)=>{
+    if(event==='PASSWORD_RECOVERY' && sess){
+      session=sess;
+      showSelfPasswordScreen('recovery');
+      return;
+    }
     if(sess){
       session=sess;
       if(!profile && (event==='SIGNED_IN' || event==='INITIAL_SESSION')) await enterApp(sess);
@@ -205,6 +211,80 @@ async function init(){
   window.addEventListener('focus',()=>ensureSessionFresh());
   setInterval(()=>ensureSessionFresh(), 30 * 60 * 1000);
 }
+
+function showSelfPasswordScreen(mode='change'){
+  selfPasswordMode=mode;
+  $('loginScreen')?.classList.add('hidden');
+  $('forcePasswordScreen')?.classList.add('hidden');
+  $('appScreen')?.classList.add('hidden');
+  $('selfPasswordScreen')?.classList.remove('hidden');
+  $('selfPasswordError').textContent='';
+  $('selfNewPassword').value='';
+  $('selfConfirmPassword').value='';
+  $('selfPasswordTitle').textContent=mode==='recovery'?'Reset Your Password':'Change Your Password';
+  $('selfPasswordHelp').textContent=mode==='recovery'?'Choose a new password for your account.':'Enter a new password for your account.';
+  setTimeout(()=>$('selfNewPassword')?.focus(),50);
+}
+
+async function finishSelfPasswordChange(){
+  const {data:{session:latestSession}}=await sb.auth.getSession();
+  if(latestSession){
+    await fetch('/api/account/password-changed',{
+      method:'POST',
+      headers:{'Content-Type':'application/json','Authorization':`Bearer ${latestSession.access_token}`},
+      body:'{}'
+    }).catch(()=>null);
+    session=latestSession;
+  }
+}
+
+$('forgotPasswordBtn')?.addEventListener('click', async()=>{
+  const email=$('loginEmail').value.trim();
+  $('loginError').textContent='';
+  if(!email){
+    $('loginError').textContent='Enter your email address first, then click Forgot Password.';
+    $('loginEmail').focus();
+    return;
+  }
+  const redirectTo=`${window.location.origin}${window.location.pathname}`;
+  const {error}=await sb.auth.resetPasswordForEmail(email,{redirectTo});
+  if(error){$('loginError').textContent=error.message;return;}
+  $('loginError').textContent='Password reset email sent. Open the link in that email to choose a new password.';
+});
+
+$('changeMyPasswordBtn')?.addEventListener('click',()=>showSelfPasswordScreen('change'));
+$('selfPasswordCancel')?.addEventListener('click',async()=>{
+  $('selfPasswordScreen').classList.add('hidden');
+  if(selfPasswordMode==='recovery'){
+    await sb.auth.signOut();
+    $('loginScreen').classList.remove('hidden');
+  }else{
+    $('appScreen').classList.remove('hidden');
+  }
+});
+$('selfPasswordForm')?.addEventListener('submit',async e=>{
+  e.preventDefault();
+  const errEl=$('selfPasswordError');
+  errEl.textContent='';
+  const password=$('selfNewPassword').value;
+  const confirm=$('selfConfirmPassword').value;
+  if(password.length<8){errEl.textContent='Password must be at least 8 characters.';return;}
+  if(password!==confirm){errEl.textContent='Passwords do not match.';return;}
+  const {error}=await sb.auth.updateUser({password});
+  if(error){errEl.textContent=error.message;return;}
+  await finishSelfPasswordChange();
+  toast('Password updated');
+  $('selfPasswordScreen').classList.add('hidden');
+  if(selfPasswordMode==='recovery'){
+    await sb.auth.signOut();
+    profile=null; session=null;
+    $('loginPassword').value='';
+    $('loginScreen').classList.remove('hidden');
+    $('loginError').textContent='Password updated. Sign in with your new password.';
+  }else{
+    $('appScreen').classList.remove('hidden');
+  }
+});
 
 $('loginForm')?.addEventListener('submit', async e=>{
   e.preventDefault(); $('loginError').textContent='';

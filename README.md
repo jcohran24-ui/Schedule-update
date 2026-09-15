@@ -318,3 +318,11 @@ Subcontractor Meeting Report sections are now sorted alphabetically by trade, th
 - Adds an activity-detail section for each selected trade with Activity ID, area, description, baseline/current dates, start/finish variance, status, and notes.
 - Summary metrics remain at the front of the report.
 - No Supabase migration required.
+
+
+## V45 - Self-service password reset
+- Added **Forgot Password?** on the sign-in screen. Users enter their email and receive a Supabase password-recovery email.
+- Added **Change Password** while signed in, available to every active user.
+- Recovery links open the app and let the user choose a new 8+ character password.
+- No database migration is required.
+- In Supabase Authentication > URL Configuration, make sure the deployed app URL is allowed as a redirect URL so recovery links can return users to the app.
