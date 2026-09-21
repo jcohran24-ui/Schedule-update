@@ -678,14 +678,42 @@ function renderSubDashboard(rows){
     const pct=effectivePercent(a);
     const review=reviewedRecently(a)?'<span class="reviewed-mark">✓ Reviewed</span>':'';
     const scope=a.scope_issue?'<span class="scope-flag">Not My Scope</span>':'';
-    return `<button class="sub-activity-card ${overdue?'overdue':''} ${a.status==='In Progress'?'in-progress':''}" data-id="${a.id}" type="button">
-      <div class="sub-card-main"><div class="sub-card-top"><strong>${esc(a.activity_name)}</strong>${overdue?'<span class="past-chip">Past Due</span>':a.status==='In Progress'?'<span class="progress-chip">In Progress</span>':`<span class="status-chip">${esc(a.status)}</span>`}</div>
-      <div class="sub-card-meta">${esc(a.activity_code)}${a.area?' • '+esc(a.area):''}</div>
-      <div class="sub-card-dates">${fmt(effectiveScheduleStart(a))} – ${fmt(effectiveScheduleFinish(a))}</div>
-      <div class="sub-card-bottom"><span>${a.status==='In Progress'?pct+'% Complete':esc(a.status)}</span>${review}${scope}</div></div><span class="sub-card-arrow">›</span>
-    </button>`;
+    const quickComplete=a.status==='In Progress'?`<button class="sub-quick-complete" type="button" data-complete-id="${a.id}">✓ Mark Complete</button>`:'';
+    return `<div class="sub-activity-card ${overdue?'overdue':''} ${a.status==='In Progress'?'in-progress':''}" data-id="${a.id}">
+      <button class="sub-card-open" type="button" data-id="${a.id}">
+        <div class="sub-card-main"><div class="sub-card-top"><strong>${esc(a.activity_name)}</strong>${overdue?'<span class="past-chip">Past Due</span>':a.status==='In Progress'?'<span class="progress-chip">In Progress</span>':`<span class="status-chip">${esc(a.status)}</span>`}</div>
+        <div class="sub-card-meta">${esc(a.activity_code)}${a.area?' • '+esc(a.area):''}</div>
+        <div class="sub-card-dates">${fmt(effectiveScheduleStart(a))} – ${fmt(effectiveScheduleFinish(a))}</div>
+        <div class="sub-card-bottom"><span>${a.status==='In Progress'?pct+'% Complete':esc(a.status)}</span>${review}${scope}</div></div><span class="sub-card-arrow">›</span>
+      </button>${quickComplete}
+    </div>`;
   }).join('') || '<div class="card empty">No activities match this view.</div>';
-  document.querySelectorAll('.sub-activity-card').forEach(b=>b.onclick=()=>openEdit(b.dataset.id));
+  document.querySelectorAll('.sub-card-open').forEach(b=>b.onclick=()=>openEdit(b.dataset.id));
+  document.querySelectorAll('.sub-quick-complete').forEach(b=>b.onclick=async e=>{
+    e.stopPropagation();
+    await quickCompleteActivity(b.dataset.completeId);
+  });
+}
+
+async function quickCompleteActivity(id){
+  const a=activities.find(x=>x.id===id);
+  if(!a || !isSub()) return;
+  if(a.status==='Complete') return;
+  if(!confirm(`Mark ${a.activity_code} – ${a.activity_name} complete today?`)) return;
+  const today=isoDate(new Date());
+  const start=a.current_start || today;
+  const patch={
+    current_start:start,
+    current_finish:today,
+    status:'Complete',
+    percent_complete:100,
+    last_reviewed_at:new Date().toISOString(),
+    scope_issue:false
+  };
+  const {error}=await sb.from('activities').update(patch).eq('id',id);
+  if(error){toast(error.message);return;}
+  toast('Activity marked complete');
+  await loadActivities();
 }
 function gcMobileAttentionRows(){
   return activities.filter(a=>a.status!=='Complete' && (isPastDueActivity(a) || a.scope_issue || ((a.status==='In Progress'||a.status==='Delayed') && !a.current_start) || (a.current_start&&a.original_start&&a.current_start!==a.original_start) || (a.current_finish&&a.original_finish&&a.current_finish!==a.original_finish)));
@@ -805,6 +833,11 @@ function openEdit(id){
   const rows=filteredActivities(); const pos=rows.findIndex(x=>x.id===a.id); $('editPosition').textContent=pos>=0?`${pos+1} of ${rows.length}`:'';
   $('editPastDueBadge').classList.toggle('hidden',!isPastDueActivity(a));
   updateQuickStatusButtons();
+  const saveBtn=$('saveNextBtn');
+  if(saveBtn){
+    saveBtn.textContent=a.status==='In Progress'?'✓ Mark Complete & Next':'Save & Next';
+    saveBtn.dataset.completeMode=a.status==='In Progress'?'1':'0';
+  }
   saveAndNextRequested=false;
   $('editModal').classList.remove('hidden');
 }
@@ -839,7 +872,17 @@ $('notMyScopeBtn')?.addEventListener('click',async()=>{
 $('noChangesBtn')?.addEventListener('click',async()=>{
   if(await patchReviewOnly({last_reviewed_at:new Date().toISOString(),scope_issue:false})){toast('Marked reviewed');closeEditModal();}
 });
-$('saveNextBtn')?.addEventListener('click',()=>{saveAndNextRequested=true;});
+$('saveNextBtn')?.addEventListener('click',()=>{
+  saveAndNextRequested=true;
+  const btn=$('saveNextBtn');
+  if(btn?.dataset.completeMode==='1'){
+    $('editStatus').value='Complete';
+    if(!$('editFinish').value) $('editFinish').value=isoDate(new Date());
+    if(!$('editStart').value) $('editStart').value=isoDate(new Date());
+    refreshEditAutoPercent();
+    updateQuickStatusButtons();
+  }
+});
 $('editForm')?.addEventListener('submit',async e=>{
   e.preventDefault(); const id=$('editId').value;
   const visibleBefore=filteredActivities(); const idx=visibleBefore.findIndex(x=>x.id===id); const nextId=idx>=0&&idx<visibleBefore.length-1?visibleBefore[idx+1].id:null;

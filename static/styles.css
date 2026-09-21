@@ -171,3 +171,12 @@
 .backup-note{padding:10px 12px;border:1px solid var(--border);border-radius:10px;background:rgba(127,127,127,.06);font-size:.9rem;margin:10px 0 6px}
 .backup-actions{display:flex;gap:6px;flex-wrap:wrap}
 @media(max-width:760px){.backup-actions button{flex:1 1 auto}.admin-summary{grid-template-columns:repeat(2,minmax(0,1fr))}}
+
+/* V47: faster subcontractor completion workflow */
+.sub-activity-card{display:block;padding:0;overflow:hidden}
+.sub-card-open{width:100%;display:flex;align-items:center;gap:12px;text-align:left;background:transparent;border:0;color:inherit;padding:15px 13px}
+.sub-card-open:hover{background:#fafcff}
+.sub-quick-complete{width:calc(100% - 22px);margin:0 11px 11px;min-height:46px;background:#148744;color:#fff;border:1px solid #11763b;font-size:15px;font-weight:850;border-radius:11px}
+.sub-quick-complete:hover{filter:brightness(.97)}
+.sub-activity-card.in-progress .sub-card-open{padding-bottom:10px}
+@media(max-width:760px){.sub-card-open{padding:14px 11px}.sub-quick-complete{min-height:50px;font-size:16px;margin-bottom:12px}}

@@ -333,3 +333,10 @@ Subcontractor Meeting Report sections are now sorted alphabetically by trade, th
 - Choose **All Trades** or select any combination of trades before generating the PDF.
 - All four meeting sections are filtered to the selected trades and remain sorted by trade.
 - No Supabase migration required.
+
+
+## V47 - Fast subcontractor completion
+- In-progress activities now show a large **Mark Complete** button directly on the subcontractor activity card.
+- One confirmation marks the activity Complete, sets Current Finish to today, sets Percent Complete to 100%, refreshes Last Reviewed, and clears the scope flag.
+- When an in-progress activity is opened, the primary action changes to **Mark Complete & Next** so a foreman can complete it and move directly to the next activity.
+- No database migration required.
