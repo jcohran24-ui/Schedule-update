@@ -838,6 +838,8 @@ function openEdit(id){
     saveBtn.textContent=a.status==='In Progress'?'✓ Mark Complete & Next':'Save & Next';
     saveBtn.dataset.completeMode=a.status==='In Progress'?'1':'0';
   }
+  const saveUpdateBtn=$('saveUpdateBtn');
+  if(saveUpdateBtn) saveUpdateBtn.textContent='Save Update';
   saveAndNextRequested=false;
   $('editModal').classList.remove('hidden');
 }
@@ -872,6 +874,9 @@ $('notMyScopeBtn')?.addEventListener('click',async()=>{
 $('noChangesBtn')?.addEventListener('click',async()=>{
   if(await patchReviewOnly({last_reviewed_at:new Date().toISOString(),scope_issue:false})){toast('Marked reviewed');closeEditModal();}
 });
+$('saveUpdateBtn')?.addEventListener('click',()=>{
+  saveAndNextRequested=false;
+});
 $('saveNextBtn')?.addEventListener('click',()=>{
   saveAndNextRequested=true;
   const btn=$('saveNextBtn');
@@ -882,6 +887,7 @@ $('saveNextBtn')?.addEventListener('click',()=>{
     refreshEditAutoPercent();
     updateQuickStatusButtons();
   }
+  $('editForm')?.requestSubmit();
 });
 $('editForm')?.addEventListener('submit',async e=>{
   e.preventDefault(); const id=$('editId').value;

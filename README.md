@@ -340,3 +340,11 @@ Subcontractor Meeting Report sections are now sorted alphabetically by trade, th
 - One confirmation marks the activity Complete, sets Current Finish to today, sets Percent Complete to 100%, refreshes Last Reviewed, and clears the scope flag.
 - When an in-progress activity is opened, the primary action changes to **Mark Complete & Next** so a foreman can complete it and move directly to the next activity.
 - No database migration required.
+
+
+## V48 - Save subcontractor updates without completing
+- Added a dedicated **Save Update** button in the subcontractor activity editor.
+- Subs can change current dates, status, or notes and save while keeping an activity In Progress.
+- In Progress activities still show **Mark Complete & Next** as a separate action.
+- Other statuses retain **Save & Next** as a separate option.
+- No database migration required.
