@@ -348,3 +348,21 @@ Subcontractor Meeting Report sections are now sorted alphabetically by trade, th
 - In Progress activities still show **Mark Complete & Next** as a separate action.
 - Other statuses retain **Save & Next** as a separate option.
 - No database migration required.
+
+
+## V49 - Keep past-due unstarted work visible to subcontractors
+- Subcontractor 4-week dashboard now always includes activities that have not started and whose scheduled start is before today.
+- Past-due detection checks the baseline/original start as well as the current/effective start, so moving a forecast Current Start into the future does not hide a missed activity.
+- `Starting Soon` is also treated as unstarted for past-due visibility when its scheduled start has already passed.
+- Past-due activities are sorted to the top of the subcontractor 4-week/6-week dashboard.
+- The subcontractor **Past Due** filter uses the same rule.
+- No Supabase migration required.
+
+
+## V50 - Keep all due incomplete work visible to subcontractors
+- Subcontractor 4-week and 6-week dashboards now always keep an activity visible when it belongs to the sub, is not Complete, and either its baseline/original start or current/effective start is today or earlier.
+- The rule applies to every incomplete status, including Not Started, Starting Soon, In Progress, Delayed, and On Hold.
+- Revised dates can no longer push already-due work out of the subcontractor dashboard.
+- Reviewed status still does not hide an activity; only marking it Complete removes it from the normal remaining-work dashboard.
+- Normal upcoming 4-week/6-week activities continue to appear as before.
+- No Supabase migration required.

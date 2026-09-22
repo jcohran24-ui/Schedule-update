@@ -614,21 +614,21 @@ function filteredActivities(){
       const f=finishValue?new Date(finishValue+'T12:00:00'):s;
       if(!s || !f) return false;
 
-      // Keep overdue activities visible in both look-aheads when they have not started.
-      // This lets the team see missed work whose effective scheduled start is before today,
-      // even though it falls outside the normal forward-looking window.
-      const overdueNotStarted = a.status === 'Not Started' && s < today;
+      // Subcontractor safety rule: once an incomplete activity should have started,
+      // keep it visible regardless of its status or whether revised dates move it
+      // outside the normal 4/6-week look-ahead. This prevents Not Started,
+      // In Progress, Delayed, On Hold, etc. from disappearing from a foreman's dashboard.
+      const subDueOrActive = isSub() && subShouldRemainVisible(a);
+      const overdueUnstarted = isPastDueActivity(a);
       const inLookaheadWindow = s <= horizon && f >= today;
-      if(!overdueNotStarted && !inLookaheadWindow) return false;
+      if(!subDueOrActive && !overdueUnstarted && !inLookaheadWindow) return false;
     }
     if(trade==='__unassigned' && a.company_id) return false;
     if(trade && trade!=='__unassigned' && a.company_id!==trade) return false;
     if(status && a.status!==status) return false;
     if(isSub() && subStatusFilter){
-      const effStart=effectiveScheduleStart(a);
-      const startDate=effStart?new Date(effStart+'T12:00:00'):null;
       if(subStatusFilter==='Past Due'){
-        if(!(a.status==='Not Started' && startDate && startDate<today)) return false;
+        if(!isPastDueActivity(a)) return false;
       } else if(a.status!==subStatusFilter) return false;
     }
     const hay=[a.activity_code,a.activity_name,a.area,companyName(a.company_id)].join(' ').toLowerCase();
@@ -637,12 +637,40 @@ function filteredActivities(){
   });
   // Look-aheads are always displayed in chronological order using current dates first,
   // with baseline dates as the fallback when current dates are blank.
-  if(['4','6'].includes(currentRange)) rows.sort(chronologicalSort);
+  if(['4','6'].includes(currentRange)){
+    // Put missed, unstarted work first for subs so it cannot get buried below future work.
+    if(isSub()) rows.sort((a,b)=>{
+      const ap=isPastDueActivity(a), bp=isPastDueActivity(b);
+      if(ap!==bp) return ap ? -1 : 1;
+      return chronologicalSort(a,b);
+    });
+    else rows.sort(chronologicalSort);
+  }
   return rows;
 }
+function isUnstartedActivity(a){
+  return !!a && (a.status==='Not Started' || a.status==='Starting Soon');
+}
+function subShouldRemainVisible(a){
+  if(!a || a.status==='Complete') return false;
+  const today=new Date(); today.setHours(0,0,0,0);
+  const starts=[a.original_start,a.current_start,effectiveScheduleStart(a)].filter(Boolean);
+  return starts.some(v=>{
+    const d=new Date(v+'T12:00:00');
+    return !isNaN(d) && d <= today;
+  });
+}
+function pastDueStartValue(a){
+  if(!a) return null;
+  // Treat the earliest committed schedule start as the due start. This keeps an activity
+  // visibly past due even if a subcontractor later forecasts a future Current Start.
+  const candidates=[a.original_start,effectiveScheduleStart(a)].filter(Boolean);
+  if(!candidates.length) return null;
+  return candidates.sort()[0];
+}
 function isPastDueActivity(a){
-  if(!a || a.status!=='Not Started') return false;
-  const s=effectiveScheduleStart(a); if(!s) return false;
+  if(!isUnstartedActivity(a)) return false;
+  const s=pastDueStartValue(a); if(!s) return false;
   const today=new Date(); today.setHours(0,0,0,0);
   return new Date(s+'T12:00:00') < today;
 }
@@ -669,7 +697,7 @@ function renderSubDashboard(rows){
   const reviewed=lookRows.filter(reviewedRecently).length;
   const name=(profile.full_name||'').split(' ')[0]||'there';
   $('subWelcome').textContent=`Welcome, ${name}!`;
-  $('subReviewSummary').textContent="Here’s your 4-Week Look Ahead. Review each activity and update anything that has started or completed.";
+  $('subReviewSummary').textContent="Here’s your 4-Week Look Ahead plus any incomplete work that should already have started. Review each activity and update anything that has started or completed.";
   $('subReviewProgress').textContent=`${reviewed} of ${lookRows.length} reviewed`;
   $('subQuickStats').innerHTML=[['Total',lookRows.length,''],['Past Due',pastDue,'past'],['In Progress',progress,'progress'],['Not Started',notStarted,'']].map(([l,n,c])=>`<div class="sub-stat ${c}"><strong>${n}</strong><span>${l}</span></div>`).join('');
 
