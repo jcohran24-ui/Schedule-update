@@ -926,7 +926,8 @@ def _build_report_pdf(data):
             vals=[]
             for c in columns:
                 v=row.get(c.get('key'))
-                vals.append(Paragraph(_pdf_escape('-' if v in (None,'') else v), cell))
+                safe=_pdf_escape('-' if v in (None,'') else v).replace('\n','<br/>')
+                vals.append(Paragraph(safe, cell))
             table_rows.append(vals)
         widths=[]
         for c in columns:

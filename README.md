@@ -436,3 +436,10 @@ Subcontractor Meeting Report sections are now sorted alphabetically by trade, th
 - The Subcontractor Meeting Report now includes the same schedule section/header title used on activity cards (for example, `A5 · ADULT RESTROOMS`, `F · LEISURE POOL`, and `FP · FIRE PIT`).
 - The report remains limited to the 4-week look-ahead and Not Started/Starting Soon subcontractor activities, including overdue not-started work.
 - No Supabase migration is required.
+
+
+## V59 - Sub Meeting Header Visibility Fix
+- The Subcontractor Meeting Report now places the schedule header directly in the same PDF cell as each activity instead of relying on a separate Section column.
+- Example: `A5 · ADULT RESTROOMS` appears on the first line and `C5050 — A5-OH Electrical Conduit` appears directly below it.
+- PDF cells now preserve line breaks so the header is visually distinct.
+- No Supabase migration required.

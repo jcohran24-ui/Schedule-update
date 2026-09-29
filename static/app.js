@@ -1791,7 +1791,7 @@ function reportTradeMatch(a,tradeId){
 }
 function activityCommon(a){return {trade:companyName(a.company_id),id:a.activity_code||'',area:a.area||'',section:scheduleSection(a)||'',activity:a.activity_name||'',baseline:`${reportDate(a.original_start)} - ${reportDate(a.original_finish)}`,current:`${reportDate(a.current_start)} - ${reportDate(a.current_finish)}`,status:a.status||'',notes:a.notes||''};}
 function cols(keys){
- const map={trade:['Trade',1.05],id:['ID',.62],area:['Area',.55],section:['Section',1.05],priority:['Priority',.58],activity:['Activity Description',2.15],baseline:['Baseline',1.2],current:['Current',1.2],status:['Status',.8],notes:['Notes',2.3],reason:['Critical Reason',1.75],fieldupdate:['Superintendent Field Update',2.35],startvar:['Start Var.',.7],finishvar:['Finish Var.',.75],date:['Date',.92],user:['Changed By',1.05],startchange:['Start Change',1.45],finishchange:['Finish Change',1.45],statuschange:['Status Change',1.25],remaining:['Remaining',.7],pastdue:['Past Due',.65],inprogress:['In Progress',.72],completed:['Completed Wk',.78],lookahead:['4-Week',.62],changes:['Changes Wk',.75],avgvar:['Avg Finish Var.',.85]};
+ const map={trade:['Trade',1.05],id:['ID',.62],area:['Area',.55],section:['Section',1.05],headeractivity:['Schedule Header / Activity',3.15],priority:['Priority',.58],activity:['Activity Description',2.15],baseline:['Baseline',1.2],current:['Current',1.2],status:['Status',.8],notes:['Notes',2.3],reason:['Critical Reason',1.75],fieldupdate:['Superintendent Field Update',2.35],startvar:['Start Var.',.7],finishvar:['Finish Var.',.75],date:['Date',.92],user:['Changed By',1.05],startchange:['Start Change',1.45],finishchange:['Finish Change',1.45],statuschange:['Status Change',1.25],remaining:['Remaining',.7],pastdue:['Past Due',.65],inprogress:['In Progress',.72],completed:['Completed Wk',.78],lookahead:['4-Week',.62],changes:['Changes Wk',.75],avgvar:['Avg Finish Var.',.85]};
  return keys.map(k=>({key:k,label:map[k][0],width:map[k][1]}));
 }
 function section(title,keys,rows,summary=''){return {title,columns:cols(keys),rows,summary};}
@@ -1901,9 +1901,9 @@ async function buildReportPayload(type,tradeId,period){
    const notStartedStatuses=new Set(['Not Started','Starting Soon']);
    const look=fourWeekRows(tradeId)
      .filter(a=>notStartedStatuses.has(a.status||'Not Started'))
-     .map(a=>activityCommon(a))
+     .map(a=>{const common=activityCommon(a);const hdr=scheduleSection(a)||'UNLABELED';return {...common,headeractivity:`${hdr}\n${a.activity_code||''} — ${a.activity_name||''}`};})
      .sort(byTrade);
-   sections=[section('4-Week Look-Ahead — Not Started',['trade','section','id','activity','baseline','current','status','notes'],look,`${look.length} not-started activit${look.length===1?'y':'ies'} in the 4-week look-ahead. Overdue not-started work is included. Schedule header titles are shown for each activity.`)];
+   sections=[section('4-Week Look-Ahead — Not Started',['trade','headeractivity','baseline','current','status','notes'],look,`${look.length} not-started activit${look.length===1?'y':'ies'} in the 4-week look-ahead. Overdue not-started work is included. Each activity shows its schedule header directly above the activity description.`)];
    subtitle=`${tradeLabel} | Week of ${dateLabel(weekStart)} | Not Started Only | Sorted by Trade`;
  }
  return {project_name:$('projectLabel')?.textContent||'CTCC Oasis',title:info.title,subtitle,sections,filename:reportFileName(info.title)};
