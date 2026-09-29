@@ -366,3 +366,12 @@ Subcontractor Meeting Report sections are now sorted alphabetically by trade, th
 - Reviewed status still does not hide an activity; only marking it Complete removes it from the normal remaining-work dashboard.
 - Normal upcoming 4-week/6-week activities continue to appear as before.
 - No Supabase migration required.
+
+
+## V51 - Subcontractor schedule range selector
+- Subcontractor dashboard still defaults to the **4-Week Look Ahead** at login.
+- Subcontractors can now switch directly between **4 Week**, **6 Week**, and **All Remaining**, including on mobile where the range selector was previously hidden.
+- On subcontractor mobile view the range buttons are ordered **4 Week / 6 Week / All Remaining** for faster field use.
+- The subcontractor dashboard heading and instructions update to match the selected range.
+- Existing due/incomplete visibility rules from V50 remain in place, so overdue or active incomplete work still cannot disappear from the 4-week or 6-week views.
+- No Supabase migration required.

@@ -697,7 +697,12 @@ function renderSubDashboard(rows){
   const reviewed=lookRows.filter(reviewedRecently).length;
   const name=(profile.full_name||'').split(' ')[0]||'there';
   $('subWelcome').textContent=`Welcome, ${name}!`;
-  $('subReviewSummary').textContent="Here’s your 4-Week Look Ahead plus any incomplete work that should already have started. Review each activity and update anything that has started or completed.";
+  const subRangeLabel=currentRange==='6'?'6-Week Look Ahead':currentRange==='all'?'All Remaining':'4-Week Look Ahead';
+  if($('subRangeLabel')) $('subRangeLabel').textContent=subRangeLabel;
+  const subRangeHelp=currentRange==='all'
+    ? 'Here’s all remaining work assigned to your company. Review each activity and update anything that has started or completed.'
+    : `Here’s your ${subRangeLabel} plus any incomplete work that should already have started. Review each activity and update anything that has started or completed.`;
+  $('subReviewSummary').textContent=subRangeHelp;
   $('subReviewProgress').textContent=`${reviewed} of ${lookRows.length} reviewed`;
   $('subQuickStats').innerHTML=[['Total',lookRows.length,''],['Past Due',pastDue,'past'],['In Progress',progress,'progress'],['Not Started',notStarted,'']].map(([l,n,c])=>`<div class="sub-stat ${c}"><strong>${n}</strong><span>${l}</span></div>`).join('');
 
