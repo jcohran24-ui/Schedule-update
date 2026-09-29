@@ -629,6 +629,10 @@ function filteredActivities(){
     if(isSub() && subStatusFilter){
       if(subStatusFilter==='Past Due'){
         if(!isPastDueActivity(a)) return false;
+      } else if(subStatusFilter==='HOT'){
+        if(activityPriority(a)!=='HOT') return false;
+      } else if(subStatusFilter==='WATCH'){
+        if(activityPriority(a)!=='WATCH') return false;
       } else if(a.status!==subStatusFilter) return false;
     }
     const hay=[a.activity_code,a.activity_name,a.area,companyName(a.company_id)].join(' ').toLowerCase();
@@ -640,6 +644,9 @@ function filteredActivities(){
   if(['4','6'].includes(currentRange)){
     // Put missed, unstarted work first for subs so it cannot get buried below future work.
     if(isSub()) rows.sort((a,b)=>{
+      const rank={HOT:0,WATCH:1,NORMAL:2};
+      const ar=rank[activityPriority(a)]??2, br=rank[activityPriority(b)]??2;
+      if(ar!==br) return ar-br;
       const ap=isPastDueActivity(a), bp=isPastDueActivity(b);
       if(ap!==bp) return ap ? -1 : 1;
       return chronologicalSort(a,b);
@@ -679,6 +686,21 @@ function reviewedRecently(a){
   const d=new Date(a.last_reviewed_at); if(isNaN(d)) return false;
   return (Date.now()-d.getTime()) <= 7*24*60*60*1000;
 }
+function activityPriority(a){
+  const p=String(a?.priority||'Normal').trim().toUpperCase();
+  return p==='HOT'?'HOT':p==='WATCH'?'WATCH':'NORMAL';
+}
+function priorityBadgeMarkup(a){
+  const p=activityPriority(a);
+  if(p==='HOT') return '<span class="priority-badge priority-hot">HOT</span>';
+  if(p==='WATCH') return '<span class="priority-badge priority-watch">WATCH</span>';
+  return '';
+}
+function priorityReasonMarkup(a,cls='priority-reason'){
+  const reason=String(a?.priority_reason||'').trim();
+  return reason?`<div class="${cls}"><strong>Reason:</strong> ${esc(reason)}</div>`:'';
+}
+
 function renderSubDashboard(rows){
   const dash=$('subDashboard'), table=$('scheduleTableWrap');
   if(!dash || !table) return;
@@ -695,6 +717,7 @@ function renderSubDashboard(rows){
   const progress=lookRows.filter(a=>a.status==='In Progress').length;
   const notStarted=lookRows.filter(a=>a.status==='Not Started').length;
   const reviewed=lookRows.filter(reviewedRecently).length;
+  const hotCount=lookRows.filter(a=>activityPriority(a)==='HOT').length;
   const name=(profile.full_name||'').split(' ')[0]||'there';
   $('subWelcome').textContent=`Welcome, ${name}!`;
   const subRangeLabel=currentRange==='6'?'6-Week Look Ahead':currentRange==='all'?'All Remaining':'4-Week Look Ahead';
@@ -704,7 +727,7 @@ function renderSubDashboard(rows){
     : `Here’s your ${subRangeLabel} plus any incomplete work that should already have started. Review each activity and update anything that has started or completed.`;
   $('subReviewSummary').textContent=subRangeHelp;
   $('subReviewProgress').textContent=`${reviewed} of ${lookRows.length} reviewed`;
-  $('subQuickStats').innerHTML=[['Total',lookRows.length,''],['Past Due',pastDue,'past'],['In Progress',progress,'progress'],['Not Started',notStarted,'']].map(([l,n,c])=>`<div class="sub-stat ${c}"><strong>${n}</strong><span>${l}</span></div>`).join('');
+  $('subQuickStats').innerHTML=[['Total',lookRows.length,''],['HOT',hotCount,'hot'],['Past Due',pastDue,'past'],['In Progress',progress,'progress']].map(([l,n,c])=>`<div class="sub-stat ${c}"><strong>${n}</strong><span>${l}</span></div>`).join('');
 
   $('subActivityCards').innerHTML=rows.map(a=>{
     const overdue=isPastDueActivity(a);
@@ -712,11 +735,12 @@ function renderSubDashboard(rows){
     const review=reviewedRecently(a)?'<span class="reviewed-mark">✓ Reviewed</span>':'';
     const scope=a.scope_issue?'<span class="scope-flag">Not My Scope</span>':'';
     const quickComplete=a.status==='In Progress'?`<button class="sub-quick-complete" type="button" data-complete-id="${a.id}">✓ Mark Complete</button>`:'';
-    return `<div class="sub-activity-card ${overdue?'overdue':''} ${a.status==='In Progress'?'in-progress':''}" data-id="${a.id}">
+    const pri=activityPriority(a);
+    return `<div class="sub-activity-card ${overdue?'overdue':''} ${a.status==='In Progress'?'in-progress':''} ${pri==='HOT'?'priority-hot-card':pri==='WATCH'?'priority-watch-card':''}" data-id="${a.id}">
       <button class="sub-card-open" type="button" data-id="${a.id}">
-        <div class="sub-card-main">${scheduleSectionMarkup(a,'sub-section-label')}<div class="sub-card-top"><strong>${esc(a.activity_name)}</strong>${overdue?'<span class="past-chip">Past Due</span>':a.status==='In Progress'?'<span class="progress-chip">In Progress</span>':`<span class="status-chip">${esc(a.status)}</span>`}</div>
+        <div class="sub-card-main"><div class="sub-priority-line">${priorityBadgeMarkup(a)}${scheduleSectionMarkup(a,'sub-section-label')}</div><div class="sub-card-top"><strong>${esc(a.activity_name)}</strong>${overdue?'<span class="past-chip">Past Due</span>':a.status==='In Progress'?'<span class="progress-chip">In Progress</span>':`<span class="status-chip">${esc(a.status)}</span>`}</div>
         <div class="sub-card-meta">${esc(a.activity_code)}${a.area?' • '+esc(a.area):''}</div>
-        <div class="sub-card-dates">${fmt(effectiveScheduleStart(a))} – ${fmt(effectiveScheduleFinish(a))}</div>
+        <div class="sub-card-dates">${fmt(effectiveScheduleStart(a))} – ${fmt(effectiveScheduleFinish(a))}</div>${priorityReasonMarkup(a,'sub-priority-reason')}
         <div class="sub-card-bottom"><span>${a.status==='In Progress'?pct+'% Complete':esc(a.status)}</span>${review}${scope}</div></div><span class="sub-card-arrow">›</span>
       </button>${quickComplete}
     </div>`;
@@ -786,10 +810,11 @@ function gcMobileCardMarkup(a){
   const overdue=isPastDueActivity(a);
   const changed=(a.current_start&&a.original_start!==a.current_start)||(a.current_finish&&a.original_finish!==a.current_finish);
   const pct=effectivePercent(a);
-  const tags=[overdue?'<span class="gc-tag danger">Past Due</span>':'',a.scope_issue?'<span class="gc-tag issue">Scope Flag</span>':'',changed?'<span class="gc-tag changed">Date Change</span>':'',a.status==='In Progress'?'<span class="gc-tag progress">In Progress</span>':''].filter(Boolean).join('');
-  return `<button class="gc-activity-card ${overdue?'overdue':''}" type="button" data-id="${a.id}">
+  const pri=activityPriority(a);
+  const tags=[pri==='HOT'?'<span class="gc-tag priority-hot">HOT</span>':pri==='WATCH'?'<span class="gc-tag priority-watch">WATCH</span>':'',overdue?'<span class="gc-tag danger">Past Due</span>':'',a.scope_issue?'<span class="gc-tag issue">Scope Flag</span>':'',changed?'<span class="gc-tag changed">Date Change</span>':'',a.status==='In Progress'?'<span class="gc-tag progress">In Progress</span>':''].filter(Boolean).join('');
+  return `<button class="gc-activity-card ${overdue?'overdue':''} ${pri==='HOT'?'priority-hot-card':pri==='WATCH'?'priority-watch-card':''}" type="button" data-id="${a.id}">
     ${scheduleSectionMarkup(a,'gc-section-label')}<div class="gc-card-head"><div><strong>${esc(a.activity_name)}</strong><div class="gc-card-code">${esc(a.activity_code)}${a.area?' • '+esc(a.area):''}</div></div><span class="gc-card-arrow">›</span></div>
-    <div class="gc-card-tags">${tags||`<span class="gc-tag">${esc(a.status)}</span>`}</div>
+    <div class="gc-card-tags">${tags||`<span class="gc-tag">${esc(a.status)}</span>`}</div>${priorityReasonMarkup(a,'gc-priority-reason')}
     <div class="gc-card-grid"><div><span>Trade</span><b>${esc(companyName(a.company_id))}</b></div><div><span>Duration</span><b>${baselineDuration(a)==null?'—':baselineDuration(a)+'d'}</b></div><div><span>Baseline</span><b>${fmt(a.original_start)} – ${fmt(a.original_finish)}</b></div><div><span>Current</span><b>${fmt(a.current_start)} – ${fmt(a.current_finish)}</b></div></div>
     <div class="gc-card-foot"><span>${esc(a.status)}${a.status==='In Progress'?' • '+pct+'%':''}</span><span>${a.last_reviewed_at?'Reviewed '+new Date(a.last_reviewed_at).toLocaleDateString():''}</span></div>
   </button>`;
@@ -846,7 +871,7 @@ function renderActivities(){
       const startChanged=!!a.current_start && a.original_start!==a.current_start, finishChanged=!!a.current_finish && a.original_finish!==a.current_finish;
       return `<tr>
         <td class="gc-only ${!isGC()?'hidden':''}">${esc(companyName(a.company_id))}</td>
-        <td><strong>${esc(a.activity_code)}</strong></td><td>${esc(a.area||'')}</td><td>${scheduleSectionMarkup(a,'table-section-label')}${esc(a.activity_name)}${a.scope_issue?' <span class="scope-flag">Scope flagged</span>':''}</td>
+        <td><strong>${esc(a.activity_code)}</strong></td><td>${esc(a.area||'')}</td><td>${priorityBadgeMarkup(a)}${scheduleSectionMarkup(a,'table-section-label')}${esc(a.activity_name)}${priorityReasonMarkup(a,'table-priority-reason')}${a.scope_issue?' <span class="scope-flag">Scope flagged</span>':''}</td>
         <td>${fmt(a.original_start)}</td><td>${baselineDuration(a)==null?'—':`${baselineDuration(a)}d`}</td><td>${fmt(a.original_finish)}</td>
         <td><span class="${startChanged?'changed-date':''}">${fmt(a.current_start)}</span></td><td><span class="${finishChanged?'changed-date':''}">${fmt(a.current_finish)}</span></td>
         <td><span class="status">${esc(a.status)}</span></td><td>${effectivePercent(a)}%</td>
@@ -1213,6 +1238,13 @@ function populateAdminCompanySelect(selected=''){
   $('adminActivityCompany').innerHTML='<option value="">Unassigned / GC</option>'+companies.map(c=>`<option value="${c.id}">${esc(c.company_name)}</option>`).join('');
   $('adminActivityCompany').value=selected||'';
 }
+function setAdminPriority(value){
+  const v=String(value||'Normal').toUpperCase()==='HOT'?'HOT':String(value||'Normal').toUpperCase()==='WATCH'?'Watch':'Normal';
+  if($('adminPriority')) $('adminPriority').value=v;
+  document.querySelectorAll('.priority-choice').forEach(b=>b.classList.toggle('selected',b.dataset.priority===v));
+}
+document.querySelectorAll('.priority-choice').forEach(b=>b.addEventListener('click',()=>setAdminPriority(b.dataset.priority)));
+
 function openAdminActivity(a=null){
   if(!isActivityAdmin()) return;
   $('adminActivityId').value=a?.id||'';
@@ -1230,6 +1262,8 @@ function openAdminActivity(a=null){
   $('adminAutoPercent').checked=a?.auto_percent!==false;
   $('adminPercent').value=a ? effectivePercent(a) : 0;
   $('adminNotes').value=a?.notes||'';
+  setAdminPriority(a?.priority||'Normal');
+  $('adminPriorityReason').value=a?.priority_reason||'';
   if($('adminCurrentStart').value && !$('adminCurrentFinish').value) autoFillAdminFinish();
   else if(!$('adminCurrentStart').value && $('adminCurrentFinish').value) autoFillAdminStart();
   refreshAdminAutoPercent();
@@ -1257,6 +1291,8 @@ $('adminActivityForm')?.addEventListener('submit',async e=>{
     auto_percent:$('adminAutoPercent').checked,
     percent_complete:effectivePercentFromForm({status:$('adminStatus').value,start:$('adminCurrentStart').value,finish:$('adminCurrentFinish').value,duration:$('adminDuration').value,stored:$('adminPercent').value,auto:$('adminAutoPercent').checked}),
     notes:$('adminNotes').value.trim()||null,
+    priority:$('adminPriority').value||'Normal',
+    priority_reason:$('adminPriorityReason').value.trim()||null,
   };
   if(!payload.activity_code||!payload.activity_name){toast('Activity ID and Activity Name are required');return;}
   if(payload.current_start&&payload.current_finish&&payload.current_finish<payload.current_start){toast('Current finish cannot be before current start');return;}

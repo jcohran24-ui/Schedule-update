@@ -392,3 +392,12 @@ Subcontractor Meeting Report sections are now sorted alphabetically by trade, th
 - Labels are based on the 08/25/2026 All Remaining schedule headings, including: A1 Kitchen & Dining Building, A2 Family Restrooms, A3 Pavilion & Storage, A4 Facilities, A5 Adult Restrooms, A6 Guard House, F Leisure Pool, FP Fire Pit, A Adult Pool, ET East Terrace, WT West Terrace, GL Great Lawn, EV Entry / Vestibule, MU Mock Up, and SD Service Area.
 - The label appears on subcontractor cards, superintendent mobile activity cards, the desktop activity list, and the activity edit header.
 - No database migration is required because the label is display-only and derived from the activity prefix.
+
+## V54 - HOT / WATCH priority
+- Activity Admin can set Normal, Watch, or HOT on an activity and add a short reason shown to subcontractors.
+- HOT activities sort to the top of the subcontractor look-ahead, followed by Watch, then normal activities.
+- Subcontractors can filter HOT or Watch from their dashboard.
+- HOT and Watch badges/reasons appear on sub cards, GC mobile cards, and desktop schedule rows.
+- Priority fields are protected as Activity Admin setup fields; subcontractors can view them but cannot change them.
+- Run `priority_migration.sql` once in Supabase before using this version.
+- Baseline-only schedule revision importing from V52/V53 is unchanged and preserves priority fields.
