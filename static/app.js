@@ -428,6 +428,9 @@ function updateAdminSummary(){
   if($('adminCompaniesCount')) $('adminCompaniesCount').textContent=companies.length;
   if($('adminActivitiesCount')) $('adminActivitiesCount').textContent=projectActs.length;
   if($('adminUnassignedCount')) $('adminUnassignedCount').textContent=`${unassigned} unassigned`;
+  const hotSuggestionCount=isActivityAdmin()?getHotSuggestions().length:0;
+  if($('adminHotSuggestionCount')) $('adminHotSuggestionCount').textContent=hotSuggestionCount;
+  if($('adminOverviewHotSuggestions')) $('adminOverviewHotSuggestions').textContent=`${hotSuggestionCount} suggestion${hotSuggestionCount===1?'':'s'} to review`;
   if($('adminOverviewUsers')) $('adminOverviewUsers').textContent=`${activeUsers} active ${activeUsers===1?'user':'users'}`;
   if($('adminOverviewCompanies')) $('adminOverviewCompanies').textContent=`${companies.length} ${companies.length===1?'company':'companies'}`;
   if($('adminOverviewActivities')) $('adminOverviewActivities').textContent=`${projectActs.length} activities • ${unassigned} unassigned`;
@@ -504,6 +507,125 @@ async function deleteBackup(id){
   try{await backupApi(`/${id}`,{method:'DELETE'});toast('Backup deleted');await loadBackups();}catch(err){toast(err.message);}
 }
 
+
+function reviewedHotSuggestionThisWeek(a){
+  if(!a?.hot_suggestion_reviewed_at) return false;
+  const reviewed=new Date(a.hot_suggestion_reviewed_at);
+  if(isNaN(reviewed)) return false;
+  return reviewed>=mondayOfWeek(new Date());
+}
+function dateOnlyObj(v){
+  if(!v) return null;
+  const d=new Date(String(v).slice(0,10)+'T12:00:00');
+  return isNaN(d)?null:d;
+}
+function workdaysPast(dateValue){
+  const d=dateOnlyObj(dateValue), today=localDateOnly();
+  if(!d || d>=today) return 0;
+  let n=0;
+  for(let x=new Date(d); x<today; x.setDate(x.getDate()+1)){
+    const day=x.getDay(); if(day!==0&&day!==6)n++;
+  }
+  return n;
+}
+function hotSuggestionInfo(a){
+  if(!a || a.status==='Complete' || activityPriority(a)==='HOT') return null;
+  const reasons=[];
+  let severity=0;
+  let category='';
+  const start=effectiveScheduleStart(a)||a.original_start;
+  const finish=effectiveScheduleFinish(a)||a.original_finish;
+  const today=localDateOnly();
+  const startDate=dateOnlyObj(start), finishDate=dateOnlyObj(finish);
+  const notStarted=['Not Started','Starting Soon'].includes(a.status);
+  if(['Delayed','On Hold'].includes(a.status)){
+    reasons.push(a.status);
+    severity=Math.max(severity,100);
+    category='delayed';
+  }
+  if(notStarted && startDate && startDate<today){
+    const n=workdaysPast(start);
+    reasons.push(`${n||1} workday${n===1?'':'s'} past planned start`);
+    severity=Math.max(severity,90+(n||1));
+    if(!category) category='overdue-start';
+  }
+  if(a.status==='In Progress' && finishDate && finishDate<today){
+    const n=workdaysPast(finish);
+    reasons.push(`${n||1} workday${n===1?'':'s'} past planned finish`);
+    severity=Math.max(severity,95+(n||1));
+    category='overdue-finish';
+  }
+  const fv=workdayVariance(a.original_finish,a.current_finish);
+  if(fv!==null && fv>=3){
+    reasons.push(`Current finish slipped +${fv} workdays`);
+    severity=Math.max(severity,70+fv);
+    if(!category) category='finish-slip';
+  }
+  const nearTerm=(()=>{
+    if(!startDate&&!finishDate) return false;
+    const h=new Date(today);h.setDate(h.getDate()+28);
+    return (startDate&&startDate<=h)||(finishDate&&finishDate>=today&&finishDate<=h);
+  })();
+  if(a.scope_issue && nearTerm){
+    reasons.push('Scope responsibility flagged');
+    severity=Math.max(severity,80);
+    if(!category) category='scope';
+  }
+  if(!reasons.length) return null;
+  return {reasons,severity,category,reasonText:reasons.join('; ')};
+}
+function getHotSuggestions({includeReviewed=false}={}){
+  return (activities||[]).map(a=>({a,info:hotSuggestionInfo(a)}))
+    .filter(x=>x.info && (includeReviewed || !reviewedHotSuggestionThisWeek(x.a)))
+    .sort((x,y)=>y.info.severity-x.info.severity || companyName(x.a.company_id).localeCompare(companyName(y.a.company_id)) || chronologicalSort(x.a,y.a));
+}
+function populateHotSuggestionFilters(){
+  const sel=$('hotSuggestionTradeFilter'); if(!sel)return;
+  const prev=sel.value;
+  sel.innerHTML='<option value="">All Trades</option>'+companies.filter(c=>c.active!==false).sort((a,b)=>a.company_name.localeCompare(b.company_name)).map(c=>`<option value="${c.id}">${esc(c.company_name)}</option>`).join('')+'<option value="__unassigned__">Unassigned</option>';
+  if([...sel.options].some(o=>o.value===prev)) sel.value=prev;
+}
+function renderHotSuggestions(){
+  if(!isActivityAdmin() || !$('hotSuggestionList')) return;
+  populateHotSuggestionFilters();
+  const trade=$('hotSuggestionTradeFilter')?.value||'', reason=$('hotSuggestionReasonFilter')?.value||'';
+  const all=getHotSuggestions();
+  const rows=all.filter(({a,info})=>(!trade||(trade==='__unassigned__'?!a.company_id:a.company_id===trade))&&(!reason||info.category===reason));
+  if($('hotSuggestionPill')) $('hotSuggestionPill').textContent=`${all.length} to review`;
+  if($('adminHotSuggestionCount')) $('adminHotSuggestionCount').textContent=all.length;
+  if($('adminOverviewHotSuggestions')) $('adminOverviewHotSuggestions').textContent=`${all.length} suggestion${all.length===1?'':'s'} to review`;
+  const box=$('hotSuggestionList');
+  if(!rows.length){box.innerHTML='<div class="hot-suggestion-empty"><strong>No suggested HOT activities match this view.</strong><span>The list updates automatically as schedule dates, statuses, scope flags, and progress change.</span></div>';return;}
+  box.innerHTML=rows.map(({a,info})=>`<div class="hot-suggestion-card" data-id="${a.id}">
+    <div class="hot-suggestion-main"><div class="hot-suggestion-top"><span class="suggested-hot-badge">SUGGESTED HOT</span>${scheduleSectionMarkup(a,'sub-section-label')}</div>
+      <h4>${esc(a.activity_code)} — ${esc(a.activity_name)}</h4>
+      <div class="hot-suggestion-meta"><span><b>Trade:</b> ${esc(companyName(a.company_id)||'Unassigned')}</span><span><b>Status:</b> ${esc(a.status||'')}</span><span><b>Baseline:</b> ${fmt(a.original_start)} – ${fmt(a.original_finish)}</span><span><b>Current:</b> ${fmt(a.current_start)} – ${fmt(a.current_finish)}</span></div>
+      <div class="hot-suggestion-why"><b>Why suggested:</b> ${esc(info.reasonText)}</div>
+    </div>
+    <div class="hot-suggestion-actions"><button class="primary confirm-hot-suggestion" data-id="${a.id}">Confirm HOT</button><button class="ghost keep-normal-suggestion" data-id="${a.id}">Not HOT This Week</button><button class="ghost open-hot-suggestion" data-id="${a.id}">Open Activity</button></div>
+  </div>`).join('');
+  document.querySelectorAll('.confirm-hot-suggestion').forEach(b=>b.onclick=()=>confirmHotSuggestion(b.dataset.id));
+  document.querySelectorAll('.keep-normal-suggestion').forEach(b=>b.onclick=()=>reviewHotSuggestionNormal(b.dataset.id));
+  document.querySelectorAll('.open-hot-suggestion').forEach(b=>b.onclick=()=>{const a=activities.find(x=>x.id===b.dataset.id);if(a)openAdminActivity(a);});
+}
+async function confirmHotSuggestion(id){
+  if(!isActivityAdmin())return;
+  const a=activities.find(x=>x.id===id), info=hotSuggestionInfo(a); if(!a||!info)return;
+  const payload={priority:'HOT',hot_suggestion_reviewed_at:new Date().toISOString()};
+  if(!String(a.priority_reason||'').trim()) payload.priority_reason=info.reasonText;
+  const {error}=await sb.from('activities').update(payload).eq('id',id); if(error){toast(error.message);return;}
+  toast(`${a.activity_code} confirmed HOT`); await loadActivities(); renderHotSuggestions();
+}
+async function reviewHotSuggestionNormal(id){
+  if(!isActivityAdmin())return;
+  const a=activities.find(x=>x.id===id); if(!a)return;
+  const {error}=await sb.from('activities').update({hot_suggestion_reviewed_at:new Date().toISOString()}).eq('id',id); if(error){toast(error.message);return;}
+  toast(`${a.activity_code} kept ${activityPriority(a)==='WATCH'?'Watch':'Normal'} for this week`); await loadActivities(); renderHotSuggestions();
+}
+$('hotSuggestionTradeFilter')?.addEventListener('change',renderHotSuggestions);
+$('hotSuggestionReasonFilter')?.addEventListener('change',renderHotSuggestions);
+$('refreshHotSuggestionsBtn')?.addEventListener('click',renderHotSuggestions);
+
 let activeAdminTab='overview';
 function setAdminTab(tab){
   const btn=[...document.querySelectorAll('.admin-tab')].find(b=>b.dataset.adminTab===tab && !b.classList.contains('hidden'));
@@ -513,6 +635,7 @@ function setAdminTab(tab){
   document.querySelectorAll('.admin-tab-panel').forEach(p=>p.classList.toggle('hidden',p.dataset.adminPanel!==tab));
   try{localStorage.setItem('adminActiveTab',tab);}catch(e){}
   if(tab==='activities') renderAdminActivities();
+  if(tab==='hot-suggestions') renderHotSuggestions();
   if(tab==='users') renderUsers();
   if(tab==='backups') loadBackups();
   updateAdminSummary();
@@ -532,7 +655,7 @@ function initAdminTabs(){
 function updateProjectLabel(){ const p=projects.find(x=>x.id===selectedProjectId); $('projectLabel').textContent=p?.project_name||'No project selected'; $('scheduleSubtitle').textContent=profile?.role==='sub' ? companyName(profile.company_id) : 'Live subcontractor updates'; updateAdminSummary(); }
 
 
-$('projectSelect')?.addEventListener('change',async e=>{selectedProjectId=e.target.value;updateProjectLabel();await loadActivities();if(activeAdminTab==='backups')await loadBackups();});
+$('projectSelect')?.addEventListener('change',async e=>{selectedProjectId=e.target.value;updateProjectLabel();await loadActivities();if(activeAdminTab==='backups')await loadBackups();if(activeAdminTab==='hot-suggestions')renderHotSuggestions();});
 $('refreshBtn')?.addEventListener('click',async()=>{await loadReferenceData();await loadActivities();toast('Schedule refreshed');});
 
 function isMeaningfulHistoryChange(h){
@@ -567,7 +690,7 @@ async function loadActivities(){
   if(error){toast(error.message);return;}
   activities=data||[];
   await loadSubChangedActivityIds();
-  renderActivities(); renderAdminActivities(); updateAdminSummary();
+  renderActivities(); renderAdminActivities(); if(activeAdminTab==='hot-suggestions')renderHotSuggestions(); updateAdminSummary();
 }
 
 function effectiveScheduleStart(a){

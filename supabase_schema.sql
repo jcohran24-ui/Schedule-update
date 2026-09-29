@@ -48,6 +48,9 @@ create table if not exists public.activities (
   status text not null default 'Not Started' check (status in ('Not Started','Starting Soon','In Progress','Complete','Delayed','On Hold')),
   percent_complete integer not null default 0 check (percent_complete between 0 and 100),
   auto_percent boolean not null default true,
+  priority text not null default 'Normal' check (priority in ('Normal','Watch','HOT')),
+  priority_reason text,
+  hot_suggestion_reviewed_at timestamptz,
   notes text,
   source_upload text,
   updated_at timestamptz not null default now(),
@@ -147,7 +150,10 @@ begin
        or old.original_finish is distinct from new.original_finish
        or old.duration_days is distinct from new.duration_days
        or old.source_upload is distinct from new.source_upload
-       or old.created_at is distinct from new.created_at then
+       or old.created_at is distinct from new.created_at
+       or old.priority is distinct from new.priority
+       or old.priority_reason is distinct from new.priority_reason
+       or old.hot_suggestion_reviewed_at is distinct from new.hot_suggestion_reviewed_at then
       raise exception 'Only the Activity Admin can edit activity setup fields';
     end if;
   end if;

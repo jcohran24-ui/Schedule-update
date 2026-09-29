@@ -403,7 +403,7 @@ Subcontractor Meeting Report sections are now sorted alphabetically by trade, th
 - Baseline-only schedule revision importing from V52/V53 is unchanged and preserves priority fields.
 
 
-## V55 - Weekly Critical Activities field handoff report
+## V56 - Weekly Critical Activities field handoff report
 - Adds Reports -> Weekly Critical Activities.
 - Defaults to HOT only; optional HOT + Watch.
 - Choose All Trades or any combination of trades.
@@ -411,3 +411,13 @@ Subcontractor Meeting Report sections are now sorted alphabetically by trade, th
 - Creates one printable section/page per trade for superintendent handoff.
 - Shows priority, activity ID, schedule section, activity description, baseline/current dates, status, critical reason, and blank superintendent field-update space.
 - No database migration beyond the V54 priority migration.
+
+
+## V56 - Automatic HOT Suggestions
+- Added a dedicated Admin > HOT Suggestions review queue.
+- Suggestions are computed automatically from live schedule risk signals: overdue unstarted work, in-progress work past finish, Delayed/On Hold status, current finish slippage of 3+ workdays, and near-term scope flags.
+- Suggested activities do not become HOT until the Activity Admin confirms them.
+- Confirm HOT promotes the activity to HOT and auto-fills the priority reason when blank.
+- Not HOT This Week keeps the current Normal/Watch priority and hides that suggestion until the next Monday; if the risk remains, it can return next week.
+- Suggestions can be filtered by trade and reason.
+- Requires `hot_suggestions_migration.sql` after the V54 priority migration.

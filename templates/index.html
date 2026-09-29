@@ -206,6 +206,7 @@
             <button class="admin-summary-card" type="button" data-admin-tab-jump="users"><span>Active Users</span><strong id="adminActiveUsersCount">0</strong><small id="adminInactiveUsersCount">0 inactive</small></button>
             <button class="admin-summary-card" type="button" data-admin-tab-jump="trades"><span>Companies / Trades</span><strong id="adminCompaniesCount">0</strong><small>Assigned companies</small></button>
             <button class="admin-summary-card" type="button" data-admin-tab-jump="activities"><span>Activities</span><strong id="adminActivitiesCount">0</strong><small id="adminUnassignedCount">0 unassigned</small></button>
+            <button class="admin-summary-card activity-admin-only" type="button" data-admin-tab-jump="hot-suggestions"><span>HOT Suggestions</span><strong id="adminHotSuggestionCount">0</strong><small>Review suggested critical work</small></button>
             <button class="admin-summary-card" type="button" data-admin-tab-jump="import"><span>Schedule Import</span><strong>Import</strong><small>Excel / CSV</small></button>
             <button class="admin-summary-card activity-admin-only" type="button" data-admin-tab-jump="backups"><span>Backups</span><strong id="adminBackupCount">0</strong><small>Restore points</small></button>
           </div>
@@ -215,6 +216,7 @@
             <button class="admin-tab gc-admin-only" type="button" data-admin-tab="users">Users</button>
             <button class="admin-tab gc-admin-only" type="button" data-admin-tab="trades">Trades</button>
             <button class="admin-tab activity-admin-only" type="button" data-admin-tab="activities">Activities</button>
+            <button class="admin-tab activity-admin-only" type="button" data-admin-tab="hot-suggestions">HOT Suggestions</button>
             <button class="admin-tab activity-admin-only" type="button" data-admin-tab="import">Import</button>
             <button class="admin-tab activity-admin-only" type="button" data-admin-tab="backups">Backups</button>
             <button class="admin-tab" type="button" data-admin-tab="settings">Settings</button>
@@ -225,6 +227,7 @@
               <button class="admin-home-card gc-admin-only" type="button" data-admin-tab-jump="users"><div class="admin-home-icon">👥</div><div><h3>Users & Foremen</h3><p>Manage users, roles, companies, passwords, and active status.</p><span id="adminOverviewUsers">0 active users</span></div><b>›</b></button>
               <button class="admin-home-card gc-admin-only" type="button" data-admin-tab-jump="trades"><div class="admin-home-icon">🏗</div><div><h3>Companies & Trades</h3><p>Manage subcontractor companies and trade assignments.</p><span id="adminOverviewCompanies">0 companies</span></div><b>›</b></button>
               <button class="admin-home-card activity-admin-only" type="button" data-admin-tab-jump="activities"><div class="admin-home-icon">▤</div><div><h3>Activities</h3><p>Search, edit, reassign, add, or delete schedule activities.</p><span id="adminOverviewActivities">0 activities</span></div><b>›</b></button>
+              <button class="admin-home-card activity-admin-only" type="button" data-admin-tab-jump="hot-suggestions"><div class="admin-home-icon">🔥</div><div><h3>HOT Suggestions</h3><p>Review automatically suggested HOT activities before they are shown as HOT to subcontractors.</p><span id="adminOverviewHotSuggestions">0 suggestions to review</span></div><b>›</b></button>
               <button class="admin-home-card activity-admin-only" type="button" data-admin-tab-jump="import"><div class="admin-home-icon">⇧</div><div><h3>Schedule Import</h3><p>Upload the latest remaining schedule from Excel or CSV. A backup is created automatically first.</p><span>Import schedule data</span></div><b>›</b></button>
               <button class="admin-home-card activity-admin-only" type="button" data-admin-tab-jump="backups"><div class="admin-home-icon">⟲</div><div><h3>Backups</h3><p>Create, download, restore, or remove project restore points.</p><span id="adminOverviewBackups">0 saved backups</span></div><b>›</b></button>
               <button class="admin-home-card" type="button" data-admin-tab-jump="settings"><div class="admin-home-icon">⚙</div><div><h3>Project Settings</h3><p>Projects, foreman email tools, and project-level controls.</p><span id="adminOverviewProject">Current project</span></div><b>›</b></button>
@@ -272,6 +275,19 @@
               </div>
               <div class="admin-result-line"><span id="adminActivityResultCount">0 activities</span></div>
               <div class="table-wrap inner"><table><thead><tr><th>Activity ID</th><th>Activity</th><th>Trade</th><th>Area</th><th>Baseline Start</th><th>Baseline Finish</th><th></th></tr></thead><tbody id="adminActivityBody"></tbody></table></div>
+            </div>
+          </div>
+
+
+          <div class="admin-tab-panel hidden" data-admin-panel="hot-suggestions">
+            <div class="card span-2 activity-admin-only admin-section-card">
+              <div class="admin-section-head"><div><h3>Suggested HOT Activities</h3><p class="muted small">The app automatically surfaces schedule risks here. Nothing becomes HOT until you confirm it. Suggestions you mark Not HOT are hidden for the rest of the current week and can return next week if the risk still exists.</p></div><span id="hotSuggestionPill" class="admin-count-pill">0 to review</span></div>
+              <div class="admin-activity-filters hot-suggestion-filters">
+                <select id="hotSuggestionTradeFilter"><option value="">All Trades</option></select>
+                <select id="hotSuggestionReasonFilter"><option value="">All Reasons</option><option value="overdue-start">Past Due Start</option><option value="overdue-finish">Past Due Finish</option><option value="finish-slip">Finish Slipped</option><option value="delayed">Delayed / On Hold</option><option value="scope">Scope Issue</option></select>
+                <button id="refreshHotSuggestionsBtn" class="ghost" type="button">Refresh</button>
+              </div>
+              <div id="hotSuggestionList" class="hot-suggestion-list"></div>
             </div>
           </div>
 
