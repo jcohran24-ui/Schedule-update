@@ -375,3 +375,13 @@ Subcontractor Meeting Report sections are now sorted alphabetically by trade, th
 - The subcontractor dashboard heading and instructions update to match the selected range.
 - Existing due/incomplete visibility rules from V50 remain in place, so overdue or active incomplete work still cannot disappear from the 4-week or 6-week views.
 - No Supabase migration required.
+
+
+## V52 - PDF text corrections + baseline-only schedule revision import
+- Added a one-click Activity Admin correction action for confirmed description transcription errors found against the CTCC 08/25/2026 All Remaining PDF.
+- A backup is created before applying those text corrections.
+- Schedule revision imports now update only `original_start` and `original_finish` on existing Activity IDs.
+- Import no longer changes descriptions, trades, areas, duration, current dates, status, percent, notes, scope/review fields, or history.
+- Unknown/new Activity IDs are skipped and reported instead of being automatically inserted.
+- Blank imported baseline dates do not erase an existing baseline date.
+- Header/area-label display concept is intentionally NOT implemented yet; review the proposed UI first.

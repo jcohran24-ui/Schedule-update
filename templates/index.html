@@ -274,9 +274,12 @@
 
           <div class="admin-tab-panel hidden" data-admin-panel="import">
             <div class="card span-2 activity-admin-only admin-section-card">
-              <div class="admin-section-head"><div><h3>Upload Remaining Schedule</h3><p class="muted small">Excel or CSV. Recommended columns: Activity ID, Activity Name, Start, Finish, Duration, Trade/Company, Area.</p></div></div>
-              <div class="admin-import-drop"><input id="scheduleFile" type="file" accept=".xlsx,.xls,.csv"><button id="uploadBtn" class="primary" type="button">Import Schedule</button></div>
+              <div class="admin-section-head"><div><h3>Upload Remaining Schedule</h3><p class="muted small">Excel or CSV. Revision imports update baseline start/finish dates only for existing Activity IDs. Foreman/subcontractor data, descriptions, trade assignments, statuses, notes, current dates, percent complete, and history are preserved.</p></div></div>
+              <div class="admin-import-drop"><input id="scheduleFile" type="file" accept=".xlsx,.xls,.csv"><button id="uploadBtn" class="primary" type="button">Update Baseline Dates</button></div>
               <div id="uploadResult" class="small"></div>
+              <hr class="admin-divider">
+              <div class="admin-section-head"><div><h3>PDF Text Corrections</h3><p class="muted small">Applies only confirmed activity-description corrections found by comparing the 08/25/2026 All Remaining PDF with the live app. No dates, trade assignments, status, notes, percent complete, or subcontractor-entered information are changed.</p></div><button id="applyPdfTextCorrectionsBtn" class="ghost" type="button">Apply Confirmed Text Corrections</button></div>
+              <div id="textCorrectionResult" class="small"></div>
             </div>
           </div>
 

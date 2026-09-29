@@ -1267,6 +1267,47 @@ async function ensureCompany(name){
   const {data,error}=await sb.from('companies').insert({company_name:clean}).select().single(); if(error)throw error; companies.push(data); return data.id;
 }
 
+const PDF_TEXT_CORRECTIONS = {
+  C5050: 'A5-OH Electrical Conduit',
+  C11130: 'A5-MEPF Trimout',
+  C11420: 'A4-Permanent Power Available to Mech',
+  C11930: 'A6-Air Barrier',
+  C11940: 'A6-CMU Walls',
+  C11980: 'A6-Dry In Complete',
+  C12010: 'A6-Paint & Stain',
+  C12100: 'A6-Paint',
+  C14290: 'Retaining Wall Stucco A5 to ENDO',
+  C15490: 'A5-Air Barrier',
+  C15900: 'A1-Select Drywall at Cooler'
+};
+
+$('applyPdfTextCorrectionsBtn')?.addEventListener('click',async()=>{
+  if(!isActivityAdmin())return;
+  if(!selectedProjectId){toast('Select a project first');return;}
+  const pending=Object.entries(PDF_TEXT_CORRECTIONS).map(([code,name])=>{
+    const a=(activities||[]).find(x=>String(x.activity_code||'').toUpperCase()===code);
+    return a && a.activity_name!==name ? {a,name} : null;
+  }).filter(Boolean);
+  if(!pending.length){$('textCorrectionResult').textContent='All confirmed PDF text corrections are already applied.';return;}
+  if(!confirm(`Apply ${pending.length} confirmed activity-description corrections from the 08/25/2026 All Remaining PDF?\n\nOnly Activity Name text will change. Subcontractor-entered data will not be changed.`))return;
+  const btn=$('applyPdfTextCorrectionsBtn'); btn.disabled=true;
+  try{
+    $('textCorrectionResult').textContent='Creating backup before text corrections…';
+    await createBackup({type:'manual',sourceFilename:'CTCC.00A.West Lot. 2026.08.25 All Remaining.pdf',silent:true});
+    let done=0;
+    for(const {a,name} of pending){
+      const {error}=await sb.from('activities').update({activity_name:name}).eq('id',a.id);
+      if(error)throw error;
+      done++;
+      $('textCorrectionResult').textContent=`Applying text corrections ${done} of ${pending.length}…`;
+    }
+    await loadActivities();
+    $('textCorrectionResult').textContent=`Done: ${done} confirmed activity descriptions corrected. All subcontractor-entered data was preserved.`;
+    toast('PDF text corrections applied');
+  }catch(err){console.error(err);$('textCorrectionResult').textContent=`Correction error: ${err.message||err}`;toast('Text corrections failed');}
+  finally{btn.disabled=false;}
+});
+
 $('uploadBtn')?.addEventListener('click',async()=>{
   const file=$('scheduleFile').files[0];if(!file){toast('Choose an Excel or CSV file first');return;}if(!selectedProjectId){toast('Create/select a project first');return;}
   $('uploadBtn').disabled=true;$('uploadResult').textContent='Reading schedule...';
@@ -1274,82 +1315,43 @@ $('uploadBtn')?.addEventListener('click',async()=>{
     const buf=await file.arrayBuffer(); const wb=XLSX.read(buf,{type:'array',cellDates:false}); const ws=wb.Sheets[wb.SheetNames[0]]; const raw=XLSX.utils.sheet_to_json(ws,{defval:null});
     $('uploadResult').textContent='Creating pre-import backup…';
     await createBackup({type:'pre_import',sourceFilename:file.name,silent:true});
-    $('uploadResult').textContent='Backup saved. Preparing schedule revision…';
-    // V42: Safe schedule revision import with automatic pre-import backup.
-    // V41: Safe schedule revision import.
-    // Existing activities refresh schedule-controlled setup fields only. Foreman-entered
-    // current dates, status, percent, notes and history are intentionally preserved.
-    let added=0,updated=0,skipped=0;
-    const newRows=[];
+    $('uploadResult').textContent='Backup saved. Preparing baseline date update…';
+    // V52: Existing Activity IDs update baseline dates ONLY.
+    // All live/subcontractor-entered fields and schedule setup fields are preserved:
+    // activity description, trade/company, area, duration, current dates, status,
+    // percent complete, notes, scope/review flags, and activity history.
+    // Unknown Activity IDs are reported and skipped rather than inserted automatically.
+    let updated=0,skipped=0,unknown=0,noDates=0;
     const revisionRows=[];
     const existingByCode=new Map((activities||[]).map(a=>[String(a.activity_code||'').trim().toLowerCase(),a]));
     for(const rr of raw){
       const r=normalizedRow(rr);
       const code=pick(r,['activity_id','activity_code','id','activity']);
-      const name=pick(r,['activity_name','activity_description','description','name']);
-      if(!code||!name){skipped++;continue;}
+      if(!code){skipped++;continue;}
       const cleanCode=String(code).trim();
-      const companyLabel=pick(r,['trade_company','company_trade','company','subcontractor','trade','responsible_contractor']);
-      const company_id=await ensureCompany(companyLabel);
+      const existing=existingByCode.get(cleanCode.toLowerCase());
+      if(!existing){unknown++;continue;}
       const start=excelDate(pick(r,['baseline_start','original_start','start','start_date']));
       const finish=excelDate(pick(r,['baseline_finish','original_finish','finish','finish_date']));
-      const durationRaw=pick(r,['baseline_duration','planned_duration','pd','duration_workdays','duration','duration_days','remaining_duration']);
-      let duration=durationRaw===null?null:(parseInt(String(durationRaw).replace(/[^0-9-]/g,''),10)||null);
-      if(duration===null) duration=baselineWorkdays(start,finish);
-      const scheduleFields={
-        project_id:selectedProjectId,
-        company_id,
-        activity_code:cleanCode,
-        activity_name:String(name).trim(),
-        area:String(pick(r,['area','location','building_area'])||'').trim()||null,
-        original_start:start,
-        original_finish:finish,
-        duration_days:duration,
-        source_upload:file.name
-      };
-      const existing=existingByCode.get(cleanCode.toLowerCase());
-      if(existing){
-        // If the revised schedule changes ownership, the prior trade's scope-review flag
-        // no longer applies. Reset only those ownership-review fields for the new trade.
-        if((existing.company_id||null)!==(company_id||null)){
-          scheduleFields.scope_issue=false;
-          scheduleFields.last_reviewed_at=null;
-        }
-        revisionRows.push(scheduleFields);
-      }else{
-        newRows.push({
-          ...scheduleFields,
-          current_start:null,
-          current_finish:null,
-          status:'Not Started',
-          percent_complete:0,
-          auto_percent:true,
-          notes:null
-        });
-      }
+      if(!start && !finish){noDates++;continue;}
+      const dateOnly={id:existing.id};
+      if(start) dateOnly.original_start=start;
+      if(finish) dateOnly.original_finish=finish;
+      revisionRows.push(dateOnly);
     }
-    const total=newRows.length+revisionRows.length;
     for(let i=0;i<revisionRows.length;i+=200){
       const part=revisionRows.slice(i,i+200);
-      const {error}=await sb.from('activities').upsert(part,{onConflict:'project_id,activity_code'});
+      const {error}=await sb.from('activities').upsert(part,{onConflict:'id'});
       if(error)throw error;
       updated+=part.length;
-      $('uploadResult').textContent=`Updating schedule revision ${updated+added} of ${total}...`;
+      $('uploadResult').textContent=`Updating baseline dates ${updated} of ${revisionRows.length}...`;
     }
-    for(let i=0;i<newRows.length;i+=200){
-      const part=newRows.slice(i,i+200);
-      const {error}=await sb.from('activities').upsert(part,{onConflict:'project_id,activity_code',ignoreDuplicates:true});
-      if(error)throw error;
-      added+=part.length;
-      $('uploadResult').textContent=`Updating schedule revision ${updated+added} of ${total}...`;
-    }
-    const rowsProcessed=added+updated;
-    const {error:logErr}=await sb.from('schedule_uploads').insert({project_id:selectedProjectId,filename:file.name,rows_imported:rowsProcessed,uploaded_by:session.user.id}); if(logErr)console.warn(logErr);
-    await loadReferenceData();await loadActivities();
-    $('uploadResult').textContent=`Done: ${updated} existing activities refreshed; ${added} new activities added; ${skipped} rows skipped. Foreman updates were preserved.`;
-    toast('Schedule revision imported — backup saved and foreman updates preserved');
+    const {error:logErr}=await sb.from('schedule_uploads').insert({project_id:selectedProjectId,filename:file.name,rows_imported:updated,uploaded_by:session.user.id}); if(logErr)console.warn(logErr);
+    await loadActivities();
+    $('uploadResult').textContent=`Done: baseline dates updated for ${updated} existing activities. ${unknown} unknown Activity IDs skipped; ${noDates} rows had no baseline dates; ${skipped} rows had no Activity ID. No subcontractor-entered data or activity setup fields were changed.`;
+    toast('Baseline dates updated — all live subcontractor data preserved');
     if(activeAdminTab==='backups') await loadBackups();
-  }catch(err){console.error(err);$('uploadResult').textContent=`Import error: ${err.message||err}`;toast('Schedule import failed');}
+  }catch(err){console.error(err);$('uploadResult').textContent=`Import error: ${err.message||err}`;toast('Baseline update failed');}
   finally{$('uploadBtn').disabled=false;}
 });
 
