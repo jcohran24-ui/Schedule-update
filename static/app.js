@@ -1740,7 +1740,7 @@ const REPORT_INFO={
   constraints:{title:'Two-Week Constraint Report',help:'Near-term work that needs attention.',period:false,trade:true,definition:'Includes past due or next-14-day work with notes, scope flags, delayed/on-hold status, missing current dates, or late finish variance.'},
   completed:{title:'Completed This Week Report',help:'Activities moved to Complete during the current week.',period:false,trade:true,definition:'Uses schedule change history for the current Monday-Sunday week and groups completed work by trade.'},
   variance:{title:'Schedule Variance Report',help:'Baseline dates compared with entered current dates.',period:false,trade:true,definition:'Shows start and finish variance in Monday-Friday workdays and sorts the largest delays first.'},
-  'sub-meeting':{title:'Subcontractor Meeting Report',help:'One packet for weekly subcontractor coordination.',period:false,trade:true,definition:'Choose All Trades or select multiple trades. Combines past due activities, 4-week look-ahead, this week’s subcontractor changes, and two-week constraints.'}
+  'sub-meeting':{title:'Subcontractor Meeting Report',help:'4-week upcoming work that subcontractors have not started.',period:false,trade:true,definition:'Choose All Trades or select multiple trades. Shows only 4-week look-ahead activities that have not started yet. Overdue not-started activities remain included.'}
 };
 function localDateOnly(d=new Date()){const x=new Date(d);x.setHours(0,0,0,0);return x;}
 function mondayOfWeek(d=new Date()){const x=localDateOnly(d);const day=x.getDay();x.setDate(x.getDate()-((day+6)%7));return x;}
@@ -1789,7 +1789,7 @@ function reportTradeMatch(a,tradeId){
  const ids=Array.isArray(tradeId)?tradeId.filter(Boolean):(tradeId?[tradeId]:[]);
  return !ids.length||ids.includes(a?.company_id);
 }
-function activityCommon(a){return {trade:companyName(a.company_id),id:a.activity_code||'',area:a.area||'',activity:a.activity_name||'',baseline:`${reportDate(a.original_start)} - ${reportDate(a.original_finish)}`,current:`${reportDate(a.current_start)} - ${reportDate(a.current_finish)}`,status:a.status||'',notes:a.notes||''};}
+function activityCommon(a){return {trade:companyName(a.company_id),id:a.activity_code||'',area:a.area||'',section:scheduleSection(a)||'',activity:a.activity_name||'',baseline:`${reportDate(a.original_start)} - ${reportDate(a.original_finish)}`,current:`${reportDate(a.current_start)} - ${reportDate(a.current_finish)}`,status:a.status||'',notes:a.notes||''};}
 function cols(keys){
  const map={trade:['Trade',1.05],id:['ID',.62],area:['Area',.55],section:['Section',1.05],priority:['Priority',.58],activity:['Activity Description',2.15],baseline:['Baseline',1.2],current:['Current',1.2],status:['Status',.8],notes:['Notes',2.3],reason:['Critical Reason',1.75],fieldupdate:['Superintendent Field Update',2.35],startvar:['Start Var.',.7],finishvar:['Finish Var.',.75],date:['Date',.92],user:['Changed By',1.05],startchange:['Start Change',1.45],finishchange:['Finish Change',1.45],statuschange:['Status Change',1.25],remaining:['Remaining',.7],pastdue:['Past Due',.65],inprogress:['In Progress',.72],completed:['Completed Wk',.78],lookahead:['4-Week',.62],changes:['Changes Wk',.75],avgvar:['Avg Finish Var.',.85]};
  return keys.map(k=>({key:k,label:map[k][0],width:map[k][1]}));
@@ -1895,11 +1895,16 @@ async function buildReportPayload(type,tradeId,period){
    subtitle=`${tradeLabel} | Week of ${dateLabel(weekStart)} - ${dateLabel(weekEnd)} | ${includeWatch?'HOT + Watch':'HOT only'} | ${selectedRows.length} activit${selectedRows.length===1?'y':'ies'}`;
  } else if(type==='sub-meeting'){
    const byTrade=(a,b)=>(a.trade||'Unassigned').localeCompare(b.trade||'Unassigned')||(a.current||'').localeCompare(b.current||'')||(a.id||'').localeCompare(b.id||'',undefined,{numeric:true});
-   const past=activities.filter(a=>a.status!=='Complete'&&isPastDueActivity(a)&&reportTradeMatch(a,tradeId)).sort(chronologicalSort).map(a=>activityCommon(a)).sort(byTrade);
-   const look=fourWeekRows(tradeId).map(a=>activityCommon(a)).sort(byTrade);
-   const changes=subWeekChanges.filter(h=>reportTradeMatch(activities.find(a=>a.id===h.activity_id),tradeId)).map(h=>{const a=activities.find(x=>x.id===h.activity_id);return {date:new Date(h.changed_at).toLocaleString(),trade:companyName(a?.company_id),id:a?.activity_code||'',activity:a?.activity_name||'',user:profileName(h.changed_by),startchange:`${reportDate(h.old_start)} -> ${reportDate(h.new_start)}`,finishchange:`${reportDate(h.old_finish)} -> ${reportDate(h.new_finish)}`,statuschange:`${h.old_status||'—'} -> ${h.new_status||'—'}`,notes:h.comment||''};}).sort(byTrade);
-   const cons=constraintRows(tradeId).map(a=>({...activityCommon(a),reason:constraintReason(a)})).sort(byTrade);
-   sections=[section('Past Due / Recovery',['trade','id','area','activity','baseline','current','status','notes'],past),section('4-Week Look-Ahead',['trade','id','area','activity','baseline','current','status','notes'],look),section('Changes This Week',['date','trade','id','activity','user','startchange','finishchange','statuschange','notes'],changes),section('Two-Week Constraints',['trade','id','area','activity','current','reason','notes'],cons)];subtitle=`${tradeLabel} | Week of ${dateLabel(weekStart)} | Sorted by Trade`;
+   // Keep this meeting handout intentionally simple: only the 4-week look-ahead work
+   // that has not started yet. fourWeekRows() already keeps overdue Not Started work
+   // visible, so missed starts cannot disappear from the packet.
+   const notStartedStatuses=new Set(['Not Started','Starting Soon']);
+   const look=fourWeekRows(tradeId)
+     .filter(a=>notStartedStatuses.has(a.status||'Not Started'))
+     .map(a=>activityCommon(a))
+     .sort(byTrade);
+   sections=[section('4-Week Look-Ahead — Not Started',['trade','section','id','activity','baseline','current','status','notes'],look,`${look.length} not-started activit${look.length===1?'y':'ies'} in the 4-week look-ahead. Overdue not-started work is included. Schedule header titles are shown for each activity.`)];
+   subtitle=`${tradeLabel} | Week of ${dateLabel(weekStart)} | Not Started Only | Sorted by Trade`;
  }
  return {project_name:$('projectLabel')?.textContent||'CTCC Oasis',title:info.title,subtitle,sections,filename:reportFileName(info.title)};
 }

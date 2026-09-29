@@ -421,3 +421,18 @@ Subcontractor Meeting Report sections are now sorted alphabetically by trade, th
 - Not HOT This Week keeps the current Normal/Watch priority and hides that suggestion until the next Monday; if the risk remains, it can return next week.
 - Suggestions can be filtered by trade and reason.
 - Requires `hot_suggestions_migration.sql` after the V54 priority migration.
+
+
+## V57 - Simplified Subcontractor Meeting Report
+- Subcontractor Meeting Report now contains only one section: **4-Week Look-Ahead — Not Started**.
+- Only activities with status **Not Started** or **Starting Soon** are included.
+- Existing overdue-not-started visibility remains in effect, so missed-start activities stay on the report even when their planned start is before today.
+- All Trades / multi-trade selection remains available and results remain grouped/sorted by trade.
+- Removed Past Due / Recovery, Changes This Week, and Two-Week Constraints sections from this report only. Other reports are unchanged.
+- No Supabase migration required.
+
+
+## V58 - Subcontractor Meeting Schedule Headers
+- The Subcontractor Meeting Report now includes the same schedule section/header title used on activity cards (for example, `A5 · ADULT RESTROOMS`, `F · LEISURE POOL`, and `FP · FIRE PIT`).
+- The report remains limited to the 4-week look-ahead and Not Started/Starting Soon subcontractor activities, including overdue not-started work.
+- No Supabase migration is required.
