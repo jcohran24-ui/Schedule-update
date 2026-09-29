@@ -401,3 +401,13 @@ Subcontractor Meeting Report sections are now sorted alphabetically by trade, th
 - Priority fields are protected as Activity Admin setup fields; subcontractors can view them but cannot change them.
 - Run `priority_migration.sql` once in Supabase before using this version.
 - Baseline-only schedule revision importing from V52/V53 is unchanged and preserves priority fields.
+
+
+## V55 - Weekly Critical Activities field handoff report
+- Adds Reports -> Weekly Critical Activities.
+- Defaults to HOT only; optional HOT + Watch.
+- Choose All Trades or any combination of trades.
+- Includes overdue critical work plus critical activities overlapping the current Monday-Sunday week.
+- Creates one printable section/page per trade for superintendent handoff.
+- Shows priority, activity ID, schedule section, activity description, baseline/current dates, status, critical reason, and blank superintendent field-update space.
+- No database migration beyond the V54 priority migration.

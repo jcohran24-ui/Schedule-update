@@ -937,13 +937,21 @@ def _build_report_pdf(data):
         if total>maxw:
             scale=maxw/total; widths=[w*scale for w in widths]
         t=Table(table_rows,colWidths=widths,repeatRows=1,hAlign='LEFT')
-        t.setStyle(TableStyle([
+        table_style=[
             ('BACKGROUND',(0,0),(-1,0),colors.HexColor('#2F5D8C')),('TEXTCOLOR',(0,0),(-1,0),colors.white),
             ('VALIGN',(0,0),(-1,-1),'TOP'),('GRID',(0,0),(-1,-1),.25,colors.HexColor('#D9E2EC')),
             ('ROWBACKGROUNDS',(0,1),(-1,-1),[colors.white,colors.HexColor('#F7F9FC')]),
             ('LEFTPADDING',(0,0),(-1,-1),3),('RIGHTPADDING',(0,0),(-1,-1),3),
             ('TOPPADDING',(0,0),(-1,-1),3),('BOTTOMPADDING',(0,0),(-1,-1),3),
-        ]))
+        ]
+        # Critical-activity handoff reports: make HOT/Watch rows visually obvious on paper.
+        for ridx,row in enumerate(rows, start=1):
+            priority=str(row.get('priority') or '').upper()
+            if priority=='HOT':
+                table_style.extend([('BACKGROUND',(0,ridx),(0,ridx),colors.HexColor('#FCE8E6')),('TEXTCOLOR',(0,ridx),(0,ridx),colors.HexColor('#B42318'))])
+            elif priority=='WATCH':
+                table_style.extend([('BACKGROUND',(0,ridx),(0,ridx),colors.HexColor('#FFF3D6')),('TEXTCOLOR',(0,ridx),(0,ridx),colors.HexColor('#9A6700'))])
+        t.setStyle(TableStyle(table_style))
         story.append(t); story.append(Spacer(1,.06*inch))
 
     def page_num(canvas, doc_obj):

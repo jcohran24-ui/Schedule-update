@@ -1612,6 +1612,7 @@ const REPORT_INFO={
   changes:{title:'Schedule Changes Report',help:'Meaningful schedule changes saved by subcontractor users.',period:true,trade:true,definition:'Includes activity description, who changed it, date/time, old vs. new start/finish/status, and the saved note.'},
   'trade-performance':{title:'Trade Performance Report',help:'Current schedule accountability by company/trade.',period:false,trade:true,definition:'Select one or more trades. Shows performance totals plus activity-level detail with dates, status, variance, and notes.'},
   'weekly-super':{title:'Weekly Superintendent Report',help:'Project-wide weekly field schedule summary.',period:false,trade:false,definition:'Includes completed and started work this week, past due work, upcoming two-week work, constraints, and schedule risks.'},
+  'weekly-critical':{title:'Weekly Critical Activities Report',help:'Field handoff for HOT work that needs superintendent attention this week.',period:false,trade:true,definition:'Choose All Trades or selected trades. Includes overdue or current-week HOT activities, separated by trade with blank field-update space. You can optionally include Watch activities.'},
   unassigned:{title:'Unassigned Activities Report',help:'Remaining work without a responsible company/trade.',period:false,trade:false,definition:'Shows every remaining unassigned activity with baseline/current dates, status, area, and notes.'},
   constraints:{title:'Two-Week Constraint Report',help:'Near-term work that needs attention.',period:false,trade:true,definition:'Includes past due or next-14-day work with notes, scope flags, delayed/on-hold status, missing current dates, or late finish variance.'},
   completed:{title:'Completed This Week Report',help:'Activities moved to Complete during the current week.',period:false,trade:true,definition:'Uses schedule change history for the current Monday-Sunday week and groups completed work by trade.'},
@@ -1667,7 +1668,7 @@ function reportTradeMatch(a,tradeId){
 }
 function activityCommon(a){return {trade:companyName(a.company_id),id:a.activity_code||'',area:a.area||'',activity:a.activity_name||'',baseline:`${reportDate(a.original_start)} - ${reportDate(a.original_finish)}`,current:`${reportDate(a.current_start)} - ${reportDate(a.current_finish)}`,status:a.status||'',notes:a.notes||''};}
 function cols(keys){
- const map={trade:['Trade',1.05],id:['ID',.62],area:['Area',.55],activity:['Activity Description',2.15],baseline:['Baseline',1.2],current:['Current',1.2],status:['Status',.8],notes:['Notes',2.3],reason:['Constraint / Risk',1.65],startvar:['Start Var.',.7],finishvar:['Finish Var.',.75],date:['Date',.92],user:['Changed By',1.05],startchange:['Start Change',1.45],finishchange:['Finish Change',1.45],statuschange:['Status Change',1.25],remaining:['Remaining',.7],pastdue:['Past Due',.65],inprogress:['In Progress',.72],completed:['Completed Wk',.78],lookahead:['4-Week',.62],changes:['Changes Wk',.75],avgvar:['Avg Finish Var.',.85]};
+ const map={trade:['Trade',1.05],id:['ID',.62],area:['Area',.55],section:['Section',1.05],priority:['Priority',.58],activity:['Activity Description',2.15],baseline:['Baseline',1.2],current:['Current',1.2],status:['Status',.8],notes:['Notes',2.3],reason:['Critical Reason',1.75],fieldupdate:['Superintendent Field Update',2.35],startvar:['Start Var.',.7],finishvar:['Finish Var.',.75],date:['Date',.92],user:['Changed By',1.05],startchange:['Start Change',1.45],finishchange:['Finish Change',1.45],statuschange:['Status Change',1.25],remaining:['Remaining',.7],pastdue:['Past Due',.65],inprogress:['In Progress',.72],completed:['Completed Wk',.78],lookahead:['4-Week',.62],changes:['Changes Wk',.75],avgvar:['Avg Finish Var.',.85]};
  return keys.map(k=>({key:k,label:map[k][0],width:map[k][1]}));
 }
 function section(title,keys,rows,summary=''){return {title,columns:cols(keys),rows,summary};}
@@ -1677,8 +1678,10 @@ function periodBounds(period){
 function reportFileName(title){return title.replace(/[^A-Za-z0-9]+/g,'_').replace(/^_|_$/g,'')+'.pdf';}
 function openReportModal(type){
  const info=REPORT_INFO[type];if(!info)return;$('reportType').value=type;$('reportModalTitle').textContent=info.title;$('reportModalHelp').textContent=info.help;$('reportDefinition').textContent=info.definition;
- const isMulti=['trade-performance','sub-meeting'].includes(type);
+ const isMulti=['trade-performance','sub-meeting','weekly-critical'].includes(type);
  $('reportTradeWrap').classList.toggle('hidden',!info.trade||isMulti);$('reportTradeMultiWrap')?.classList.toggle('hidden',!isMulti);$('reportPeriodWrap').classList.toggle('hidden',!info.period);
+ $('reportPriorityWrap')?.classList.toggle('hidden',type!=='weekly-critical');
+ if(type==='weekly-critical'&&$('reportPriority'))$('reportPriority').value='hot';
  $('reportTrade').innerHTML='<option value="">All Trades</option>'+companies.map(c=>`<option value="${c.id}">${esc(c.company_name)}</option>`).join('');
  if($('reportTradeMulti')) {
    $('reportTradeMulti').innerHTML=`<label class="report-trade-option report-trade-all"><input type="checkbox" value="__all__" checked><span><b>All Trades</b></span></label>`+companies.map(c=>`<label class="report-trade-option"><input type="checkbox" value="${c.id}"><span>${esc(c.company_name)}</span></label>`).join('');
@@ -1740,6 +1743,33 @@ async function buildReportPayload(type,tradeId,period){
    const cons=constraintRows().map(a=>({...activityCommon(a),reason:constraintReason(a)}));
    const upcoming=twoWeekBaseRows().filter(a=>!isPastDueActivity(a)).map(a=>activityCommon(a));
    sections=[section('Completed This Week',['trade','id','area','activity','current','notes'],completed),section('Started This Week',['trade','id','area','activity','current','status','notes'],started),section('Past Due / Recovery',['trade','id','area','activity','baseline','current','status','notes'],past),section('Two-Week Constraints',['trade','id','area','activity','current','reason','notes'],cons),section('Upcoming Two Weeks',['trade','id','area','activity','current','status'],upcoming)];subtitle=`Week of ${dateLabel(weekStart)} | ${completed.length} completed | ${started.length} started | ${past.length} past due | ${cons.length} constraints`;
+ } else if(type==='weekly-critical'){
+   const includeWatch=(period==='hot-watch');
+   const allowedPriorities=includeWatch?new Set(['HOT','Watch']):new Set(['HOT']);
+   const weekStartDate=localDateOnly(weekStart), weekEndDate=localDateOnly(weekEnd);
+   const inWeeklyCriticalWindow=a=>{
+     if(a.status==='Complete'||!allowedPriorities.has(activityPriority(a))||!reportTradeMatch(a,tradeId))return false;
+     if(isPastDueActivity(a))return true;
+     const sv=effectiveScheduleStart(a),fv=effectiveScheduleFinish(a);if(!sv&&!fv)return false;
+     const sd=sv?new Date(sv+'T12:00:00'):null,fd=fv?new Date(fv+'T12:00:00'):sd;
+     return !!(sd&&fd&&sd<=weekEndDate&&fd>=weekStartDate);
+   };
+   const tradeList=tradeIds.length?companies.filter(c=>tradeIds.includes(c.id)):companies;
+   const selectedRows=activities.filter(inWeeklyCriticalWindow);
+   const priorityRank={HOT:0,Watch:1};
+   tradeList.forEach((c,idx)=>{
+     const rows=selectedRows.filter(a=>a.company_id===c.id).sort((a,b)=>(priorityRank[activityPriority(a)]??9)-(priorityRank[activityPriority(b)]??9)||chronologicalSort(a,b)).map(a=>({
+       priority:activityPriority(a),id:a.activity_code||'',section:scheduleSection(a)||'',activity:a.activity_name||'',baseline:`${reportDate(a.original_start)} - ${reportDate(a.original_finish)}`,current:`${reportDate(a.current_start)} - ${reportDate(a.current_finish)}`,status:a.status||'',reason:(a.priority_reason||'').trim()||'—',fieldupdate:'Start: ______   Finish: ______   Status: ______\nNotes: __________________________________________'
+     }));
+     if(rows.length){
+       const sec=section(`${c.company_name} - Critical Activities`,['priority','id','section','activity','baseline','current','status','reason','fieldupdate'],rows,`${rows.length} ${includeWatch?'HOT / Watch':'HOT'} activit${rows.length===1?'y':'ies'} requiring field verification. Superintendent: ____________________   Date: __________`);
+       sec.page_break_before=sections.length>0;sections.push(sec);
+     }
+   });
+   const unassigned=selectedRows.filter(a=>!a.company_id).map(a=>({priority:activityPriority(a),id:a.activity_code||'',section:scheduleSection(a)||'',activity:a.activity_name||'',baseline:`${reportDate(a.original_start)} - ${reportDate(a.original_finish)}`,current:`${reportDate(a.current_start)} - ${reportDate(a.current_finish)}`,status:a.status||'',reason:(a.priority_reason||'').trim()||'—',fieldupdate:'Start: ______   Finish: ______   Status: ______\nNotes: __________________________________________'}));
+   if(unassigned.length){const sec=section('Unassigned - Critical Activities',['priority','id','section','activity','baseline','current','status','reason','fieldupdate'],unassigned,`${unassigned.length} critical activit${unassigned.length===1?'y':'ies'} without a trade assignment.`);sec.page_break_before=sections.length>0;sections.push(sec);}
+   if(!sections.length)sections=[section('Weekly Critical Activities',['priority','id','section','activity','baseline','current','status','reason','fieldupdate'],[],`No ${includeWatch?'HOT or Watch':'HOT'} activities are overdue or overlap this week for the selected trade(s).`)];
+   subtitle=`${tradeLabel} | Week of ${dateLabel(weekStart)} - ${dateLabel(weekEnd)} | ${includeWatch?'HOT + Watch':'HOT only'} | ${selectedRows.length} activit${selectedRows.length===1?'y':'ies'}`;
  } else if(type==='sub-meeting'){
    const byTrade=(a,b)=>(a.trade||'Unassigned').localeCompare(b.trade||'Unassigned')||(a.current||'').localeCompare(b.current||'')||(a.id||'').localeCompare(b.id||'',undefined,{numeric:true});
    const past=activities.filter(a=>a.status!=='Complete'&&isPastDueActivity(a)&&reportTradeMatch(a,tradeId)).sort(chronologicalSort).map(a=>activityCommon(a)).sort(byTrade);
@@ -1751,7 +1781,7 @@ async function buildReportPayload(type,tradeId,period){
  return {project_name:$('projectLabel')?.textContent||'CTCC Oasis',title:info.title,subtitle,sections,filename:reportFileName(info.title)};
 }
 $('reportForm')?.addEventListener('submit',async e=>{
- e.preventDefault();const type=$('reportType').value,isMulti=['trade-performance','sub-meeting'].includes(type),selected=isMulti?Array.from(document.querySelectorAll('#reportTradeMulti input:checked')).map(x=>x.value):[],tradeId=isMulti?(selected.includes('__all__')?[]:selected):($('reportTrade').value||''),period=$('reportPeriod').value||'week',btn=$('generateReportBtn');
+ e.preventDefault();const type=$('reportType').value,isMulti=['trade-performance','sub-meeting','weekly-critical'].includes(type),selected=isMulti?Array.from(document.querySelectorAll('#reportTradeMulti input:checked')).map(x=>x.value):[],tradeId=isMulti?(selected.includes('__all__')?[]:selected):($('reportTrade').value||''),period=type==='weekly-critical'?($('reportPriority')?.value||'hot'):($('reportPeriod').value||'week'),btn=$('generateReportBtn');
  if(btn){btn.disabled=true;btn.textContent='Generating…';}
  try{const payload=await buildReportPayload(type,tradeId,period);const r=await fetch('/api/export/report-pdf',{method:'POST',headers:{'Content-Type':'application/json','Authorization':`Bearer ${session.access_token}`},body:JSON.stringify(payload)});if(!r.ok){const d=await r.json().catch(()=>({}));throw new Error(d.error||'Could not generate report');}const blob=await r.blob(),url=URL.createObjectURL(blob),a=document.createElement('a');a.href=url;a.download=payload.filename;document.body.appendChild(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(url),1000);closeReportModal();toast('Report PDF downloaded');}catch(err){toast(err.message||'Could not generate report');}finally{if(btn){btn.disabled=false;btn.textContent='Generate PDF';}}
 });

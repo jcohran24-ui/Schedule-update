@@ -181,6 +181,7 @@
             <button class="report-card" data-report="changes" type="button"><span class="report-icon">↻</span><div><h3>Schedule Changes</h3><p>Subcontractor date/status changes with activity description, old vs. new values, notes, user, and time.</p></div><b>›</b></button>
             <button class="report-card" data-report="trade-performance" type="button"><span class="report-icon">▦</span><div><h3>Trade Performance</h3><p>Remaining, past due, in progress, completed this week, upcoming work, and schedule changes by trade.</p></div><b>›</b></button>
             <button class="report-card" data-report="weekly-super" type="button"><span class="report-icon">★</span><div><h3>Weekly Superintendent</h3><p>Weekly starts/completions, upcoming work, past due items, constraints, and major schedule risks.</p></div><b>›</b></button>
+            <button class="report-card" data-report="weekly-critical" type="button"><span class="report-icon">🔥</span><div><h3>Weekly Critical Activities</h3><p>HOT activities for this week, separated by trade with field-update space for superintendent handoff.</p></div><b>›</b></button>
             <button class="report-card" data-report="unassigned" type="button"><span class="report-icon">?</span><div><h3>Unassigned Activities</h3><p>All remaining schedule activities that do not have a responsible company/trade assigned.</p></div><b>›</b></button>
             <button class="report-card" data-report="constraints" type="button"><span class="report-icon">!</span><div><h3>Two-Week Constraint</h3><p>Past due or upcoming 14-day work with notes, scope flags, missing dates, delayed/on-hold status, or date variance.</p></div><b>›</b></button>
             <button class="report-card" data-report="completed" type="button"><span class="report-icon">✓</span><div><h3>Completed This Week</h3><p>Activities moved to Complete during the current Monday-Sunday week.</p></div><b>›</b></button>
@@ -348,6 +349,9 @@
         </div>
         <label id="reportPeriodWrap">Period
           <select id="reportPeriod"><option value="week">This Week</option><option value="7">Last 7 Days</option><option value="30">Last 30 Days</option><option value="all">All Recorded Changes</option></select>
+        </label>
+        <label id="reportPriorityWrap" class="hidden">Priority
+          <select id="reportPriority"><option value="hot">HOT only</option><option value="hot-watch">HOT + Watch</option></select>
         </label>
         <p id="reportDefinition" class="report-definition"></p>
         <button id="generateReportBtn" class="primary" type="submit">Generate PDF</button>
