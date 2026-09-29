@@ -385,3 +385,10 @@ Subcontractor Meeting Report sections are now sorted alphabetically by trade, th
 - Unknown/new Activity IDs are skipped and reported instead of being automatically inserted.
 - Blank imported baseline dates do not erase an existing baseline date.
 - Header/area-label display concept is intentionally NOT implemented yet; review the proposed UI first.
+
+
+## V53 - Source PDF section labels on activities
+- Adds a small schedule-section header above activity descriptions so field users can understand the source schedule abbreviations without changing the stored activity name.
+- Labels are based on the 08/25/2026 All Remaining schedule headings, including: A1 Kitchen & Dining Building, A2 Family Restrooms, A3 Pavilion & Storage, A4 Facilities, A5 Adult Restrooms, A6 Guard House, F Leisure Pool, FP Fire Pit, A Adult Pool, ET East Terrace, WT West Terrace, GL Great Lawn, EV Entry / Vestibule, MU Mock Up, and SD Service Area.
+- The label appears on subcontractor cards, superintendent mobile activity cards, the desktop activity list, and the activity edit header.
+- No database migration is required because the label is display-only and derived from the activity prefix.

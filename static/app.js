@@ -714,7 +714,7 @@ function renderSubDashboard(rows){
     const quickComplete=a.status==='In Progress'?`<button class="sub-quick-complete" type="button" data-complete-id="${a.id}">✓ Mark Complete</button>`:'';
     return `<div class="sub-activity-card ${overdue?'overdue':''} ${a.status==='In Progress'?'in-progress':''}" data-id="${a.id}">
       <button class="sub-card-open" type="button" data-id="${a.id}">
-        <div class="sub-card-main"><div class="sub-card-top"><strong>${esc(a.activity_name)}</strong>${overdue?'<span class="past-chip">Past Due</span>':a.status==='In Progress'?'<span class="progress-chip">In Progress</span>':`<span class="status-chip">${esc(a.status)}</span>`}</div>
+        <div class="sub-card-main">${scheduleSectionMarkup(a,'sub-section-label')}<div class="sub-card-top"><strong>${esc(a.activity_name)}</strong>${overdue?'<span class="past-chip">Past Due</span>':a.status==='In Progress'?'<span class="progress-chip">In Progress</span>':`<span class="status-chip">${esc(a.status)}</span>`}</div>
         <div class="sub-card-meta">${esc(a.activity_code)}${a.area?' • '+esc(a.area):''}</div>
         <div class="sub-card-dates">${fmt(effectiveScheduleStart(a))} – ${fmt(effectiveScheduleFinish(a))}</div>
         <div class="sub-card-bottom"><span>${a.status==='In Progress'?pct+'% Complete':esc(a.status)}</span>${review}${scope}</div></div><span class="sub-card-arrow">›</span>
@@ -748,6 +748,37 @@ async function quickCompleteActivity(id){
   toast('Activity marked complete');
   await loadActivities();
 }
+
+const SCHEDULE_SECTION_LABELS={
+  A1:'KITCHEN & DINING BUILDING',
+  A2:'FAMILY RESTROOMS',
+  A3:'PAVILION & STORAGE',
+  A4:'FACILITIES',
+  A5:'ADULT RESTROOMS',
+  A6:'GUARD HOUSE',
+  ET:'EAST TERRACE',
+  WT:'WEST TERRACE',
+  F:'LEISURE POOL',
+  FP:'FIRE PIT',
+  A:'ADULT POOL',
+  GL:'GREAT LAWN',
+  EV:'ENTRY / VESTIBULE',
+  MU:'MOCK UP',
+  SD:'SERVICE AREA'
+};
+function scheduleSection(a){
+  const name=String(a?.activity_name||'').trim();
+  const m=name.match(/^([A-Za-z]+\d*)-/);
+  if(!m) return '';
+  const code=m[1].toUpperCase();
+  const label=SCHEDULE_SECTION_LABELS[code];
+  return label?`${code} · ${label}`:'';
+}
+function scheduleSectionMarkup(a,cls='activity-section-label'){
+  const label=scheduleSection(a);
+  return label?`<div class="${cls}">${esc(label)}</div>`:'';
+}
+
 function gcMobileAttentionRows(){
   return activities.filter(a=>a.status!=='Complete' && (isPastDueActivity(a) || a.scope_issue || ((a.status==='In Progress'||a.status==='Delayed') && !a.current_start) || (a.current_start&&a.original_start&&a.current_start!==a.original_start) || (a.current_finish&&a.original_finish&&a.current_finish!==a.original_finish)));
 }
@@ -757,7 +788,7 @@ function gcMobileCardMarkup(a){
   const pct=effectivePercent(a);
   const tags=[overdue?'<span class="gc-tag danger">Past Due</span>':'',a.scope_issue?'<span class="gc-tag issue">Scope Flag</span>':'',changed?'<span class="gc-tag changed">Date Change</span>':'',a.status==='In Progress'?'<span class="gc-tag progress">In Progress</span>':''].filter(Boolean).join('');
   return `<button class="gc-activity-card ${overdue?'overdue':''}" type="button" data-id="${a.id}">
-    <div class="gc-card-head"><div><strong>${esc(a.activity_name)}</strong><div class="gc-card-code">${esc(a.activity_code)}${a.area?' • '+esc(a.area):''}</div></div><span class="gc-card-arrow">›</span></div>
+    ${scheduleSectionMarkup(a,'gc-section-label')}<div class="gc-card-head"><div><strong>${esc(a.activity_name)}</strong><div class="gc-card-code">${esc(a.activity_code)}${a.area?' • '+esc(a.area):''}</div></div><span class="gc-card-arrow">›</span></div>
     <div class="gc-card-tags">${tags||`<span class="gc-tag">${esc(a.status)}</span>`}</div>
     <div class="gc-card-grid"><div><span>Trade</span><b>${esc(companyName(a.company_id))}</b></div><div><span>Duration</span><b>${baselineDuration(a)==null?'—':baselineDuration(a)+'d'}</b></div><div><span>Baseline</span><b>${fmt(a.original_start)} – ${fmt(a.original_finish)}</b></div><div><span>Current</span><b>${fmt(a.current_start)} – ${fmt(a.current_finish)}</b></div></div>
     <div class="gc-card-foot"><span>${esc(a.status)}${a.status==='In Progress'?' • '+pct+'%':''}</span><span>${a.last_reviewed_at?'Reviewed '+new Date(a.last_reviewed_at).toLocaleDateString():''}</span></div>
@@ -815,7 +846,7 @@ function renderActivities(){
       const startChanged=!!a.current_start && a.original_start!==a.current_start, finishChanged=!!a.current_finish && a.original_finish!==a.current_finish;
       return `<tr>
         <td class="gc-only ${!isGC()?'hidden':''}">${esc(companyName(a.company_id))}</td>
-        <td><strong>${esc(a.activity_code)}</strong></td><td>${esc(a.area||'')}</td><td>${esc(a.activity_name)}${a.scope_issue?' <span class="scope-flag">Scope flagged</span>':''}</td>
+        <td><strong>${esc(a.activity_code)}</strong></td><td>${esc(a.area||'')}</td><td>${scheduleSectionMarkup(a,'table-section-label')}${esc(a.activity_name)}${a.scope_issue?' <span class="scope-flag">Scope flagged</span>':''}</td>
         <td>${fmt(a.original_start)}</td><td>${baselineDuration(a)==null?'—':`${baselineDuration(a)}d`}</td><td>${fmt(a.original_finish)}</td>
         <td><span class="${startChanged?'changed-date':''}">${fmt(a.current_start)}</span></td><td><span class="${finishChanged?'changed-date':''}">${fmt(a.current_finish)}</span></td>
         <td><span class="status">${esc(a.status)}</span></td><td>${effectivePercent(a)}%</td>
@@ -859,7 +890,7 @@ function openEdit(id){
   if(!canUpdateActivity()) return;
   const a=activities.find(x=>x.id===id); if(!a)return;
   if(isActivityAdmin()){ openAdminActivity(a); return; }
-  $('editId').value=a.id;$('editTitle').textContent=a.activity_name;$('editCode').textContent=`${a.activity_code} • ${a.area||'No area'}`;
+  $('editId').value=a.id;$('editTitle').textContent=a.activity_name;const sec=scheduleSection(a);$('editCode').textContent=`${sec?sec+' • ':''}${a.activity_code}${a.area?' • '+a.area:''}`;
   $('baselineDates').textContent=`Start ${fmt(a.original_start)} • ${baselineDuration(a)==null?'—':baselineDuration(a)+' days'} • Finish ${fmt(a.original_finish)}`;$('editStart').value=a.current_start||'';$('editFinish').value=a.current_finish||'';$('editStatus').value=a.status;$('editNotes').value=a.notes||'';refreshEditAutoPercent();
   if($('editStart').value && !$('editFinish').value) autoFillEditFinish();
   else if(!$('editStart').value && $('editFinish').value) autoFillEditStart();

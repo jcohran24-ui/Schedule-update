@@ -182,3 +182,10 @@
 @media(max-width:760px){.sub-card-open{padding:14px 11px}.sub-quick-complete{min-height:50px;font-size:16px;margin-bottom:12px}}
 
 /* V48: allow subcontractors to save updates without completing */
+
+
+/* V53 schedule section/header labels from the source PDF */
+.sub-section-label,.gc-section-label,.table-section-label,.activity-section-label{font-size:10px;font-weight:850;letter-spacing:.055em;text-transform:uppercase;color:#0f6f78;margin-bottom:5px}
+.sub-section-label{margin:0 0 6px}
+.gc-section-label{margin:0 0 7px}
+.table-section-label{font-size:9px;margin:0 0 3px;line-height:1.2}
