@@ -1452,8 +1452,19 @@ function excelDate(v){
   const d=new Date(v);if(!isNaN(d))return isoDate(d);
   return null;
 }
+function canonicalCompanyName(name){
+  const clean=String(name||'').trim();
+  const key=clean.toLowerCase().replace(/[^a-z0-9]+/g,' ').trim();
+  const aliases={
+    'southeast electrical':'Southern Electric Company',
+    'southeast electric':'Southern Electric Company',
+    'southern electric company':'Southern Electric Company',
+    'sec':'Southern Electric Company'
+  };
+  return aliases[key]||clean;
+}
 async function ensureCompany(name){
-  if(!name)return null; const clean=String(name).trim(); let c=companies.find(x=>x.company_name.toLowerCase()===clean.toLowerCase()); if(c)return c.id;
+  if(!name)return null; const clean=canonicalCompanyName(name); let c=companies.find(x=>canonicalCompanyName(x.company_name).toLowerCase()===clean.toLowerCase()); if(c)return c.id;
   const {data,error}=await sb.from('companies').insert({company_name:clean}).select().single(); if(error)throw error; companies.push(data); return data.id;
 }
 

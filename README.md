@@ -443,3 +443,9 @@ Subcontractor Meeting Report sections are now sorted alphabetically by trade, th
 - Example: `A5 · ADULT RESTROOMS` appears on the first line and `C5050 — A5-OH Electrical Conduit` appears directly below it.
 - PDF cells now preserve line breaks so the header is visually distinct.
 - No Supabase migration required.
+
+
+## V60 - Southern Electric Company Rename
+- Renames the existing `Southeast Electrical` company to `Southern Electric Company` without changing company IDs, activity assignments, or user assignments.
+- Adds import aliases so future schedule files using `Southeast Electrical`, `Southeast Electric`, `SEC`, or `Southern Electric Company` all resolve to `Southern Electric Company` rather than creating a duplicate trade.
+- Run `southern_electric_company_rename.sql` once in Supabase SQL Editor after deployment.
