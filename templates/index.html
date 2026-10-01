@@ -293,8 +293,8 @@
 
           <div class="admin-tab-panel hidden" data-admin-panel="import">
             <div class="card span-2 activity-admin-only admin-section-card">
-              <div class="admin-section-head"><div><h3>Upload Remaining Schedule</h3><p class="muted small">Excel or CSV. Revision imports update baseline start/finish dates only for existing Activity IDs. Foreman/subcontractor data, descriptions, trade assignments, statuses, notes, current dates, percent complete, and history are preserved.</p></div></div>
-              <div class="admin-import-drop"><input id="scheduleFile" type="file" accept=".xlsx,.xls,.csv"><button id="uploadBtn" class="primary" type="button">Update Baseline Dates</button></div>
+              <div class="admin-section-head"><div><h3>Upload Remaining Schedule</h3><p class="muted small">PDF, Excel, or CSV. Revision imports update baseline start/finish dates only for existing Activity IDs. Foreman/subcontractor data, descriptions, trade assignments, statuses, notes, current dates, percent complete, and history are preserved. Unknown or ambiguous PDF rows are skipped rather than guessed.</p></div></div>
+              <div class="admin-import-drop"><input id="scheduleFile" type="file" accept=".pdf,.xlsx,.xls,.csv"><button id="uploadBtn" class="primary" type="button">Update Baseline Dates</button></div>
               <div id="uploadResult" class="small"></div>
               <hr class="admin-divider">
               <div class="admin-section-head"><div><h3>PDF Text Corrections</h3><p class="muted small">Applies only confirmed activity-description corrections found by comparing the 08/25/2026 All Remaining PDF with the live app. No dates, trade assignments, status, notes, percent complete, or subcontractor-entered information are changed.</p></div><button id="applyPdfTextCorrectionsBtn" class="ghost" type="button">Apply Confirmed Text Corrections</button></div>
@@ -478,6 +478,7 @@
   <script>window.APP_CONFIG = {supabaseUrl: {{ supabase_url|tojson }}, supabaseAnonKey: {{ supabase_anon_key|tojson }}};</script>
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/pdfjs-dist@3.11.174/build/pdf.min.js"></script>
   <script src="/static/app.js"></script>
 </body>
 </html>
