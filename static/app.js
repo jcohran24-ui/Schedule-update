@@ -25,6 +25,8 @@ let gcMobileIssuesOnly = false;
 let subChangedActivityIds = new Set();
 let selfPasswordMode = 'change';
 let pendingImportPreview = null;
+let convertedCsvRows = null;
+let convertedCsvFilename = '';
 
 const $ = (id) => document.getElementById(id);
 const fmt = (d) => d ? new Date(d + 'T12:00:00').toLocaleDateString() : '—';
@@ -1768,6 +1770,71 @@ function prepareBaselineRevisionRows(rawRows){
   rows.sort((a,b)=>String(a.existing?.activity_code||'').localeCompare(String(b.existing?.activity_code||''),undefined,{numeric:true,sensitivity:'base'}));
   return {rows,skipped,unknown,noDates,ambiguous};
 }
+function csvEscapeValue(v){
+  const s=String(v??'');
+  return /[",\n\r]/.test(s)?`"${s.replace(/"/g,'""')}"`:s;
+}
+function rowsToBaselineCsv(rows){
+  const header=['Activity ID','Baseline Start','Baseline Finish'];
+  const lines=[header.map(csvEscapeValue).join(',')];
+  for(const r of rows||[]){
+    lines.push([
+      r.activity_id||r.activity_code||'',
+      r.baseline_start||r.original_start||'',
+      r.baseline_finish||r.original_finish||''
+    ].map(csvEscapeValue).join(','));
+  }
+  return lines.join('\r\n');
+}
+function showConvertedCsv(rows,sourceName){
+  convertedCsvRows=rows||[];
+  const base=String(sourceName||'schedule').replace(/\.pdf$/i,'').replace(/[^A-Za-z0-9._-]+/g,'_')||'schedule';
+  convertedCsvFilename=`${base}_converted.csv`;
+  const csv=rowsToBaselineCsv(convertedCsvRows);
+  if($('convertedCsvText'))$('convertedCsvText').value=csv;
+  $('convertedCsvWrap')?.classList.remove('hidden');
+  return csv;
+}
+function downloadConvertedCsv(){
+  if(!convertedCsvRows?.length){toast('Convert a PDF first');return;}
+  const csv=rowsToBaselineCsv(convertedCsvRows);
+  const blob=new Blob([csv],{type:'text/csv;charset=utf-8'});
+  const url=URL.createObjectURL(blob);
+  const a=document.createElement('a');
+  a.href=url;a.download=convertedCsvFilename||'schedule_converted.csv';
+  document.body.appendChild(a);a.click();a.remove();
+  setTimeout(()=>URL.revokeObjectURL(url),1000);
+}
+async function convertSelectedPdfToCsv(){
+  const file=$('scheduleFile')?.files?.[0];
+  if(!file){toast('Choose a PDF first');return;}
+  if(!/\.pdf$/i.test(file.name)){toast('Choose a PDF file to convert');return;}
+  if(!selectedProjectId){toast('Create/select a project first');return;}
+  const btn=$('convertPdfBtn');
+  if(btn){btn.disabled=true;btn.textContent='Converting…';}
+  try{
+    $('uploadResult').textContent='Reading PDF and converting to CSV…';
+    const existingByCode=new Map((activities||[]).map(a=>[String(a.activity_code||'').trim().toLowerCase(),a]));
+    const parsed=await pdfScheduleRows(file,existingByCode);
+    if(!parsed.rows.length){
+      throw new Error('No safe Activity ID/date rows could be converted from this PDF.');
+    }
+    showConvertedCsv(parsed.rows,file.name);
+    const prepared=prepareBaselineRevisionRows(parsed.rows);
+    renderImportPreview(prepared,convertedCsvFilename);
+    const updates=prepared.rows.filter(r=>r.action==='Update').length;
+    const unchanged=prepared.rows.filter(r=>r.action==='No Change').length;
+    const skips=prepared.rows.filter(r=>r.action==='Skip').length+prepared.unknown+prepared.noDates+prepared.skipped;
+    $('uploadResult').textContent=`Converted ${parsed.rows.length} PDF row${parsed.rows.length===1?'':'s'} to CSV. Preview: ${updates} update${updates===1?'':'s'}, ${unchanged} no change, ${skips} skipped/unmatched. Nothing has been saved yet.`;
+    toast('PDF converted to CSV and previewed');
+  }catch(err){
+    console.error(err);
+    $('uploadResult').textContent=`Conversion error: ${err.message||err}`;
+    toast('PDF conversion failed');
+  }finally{
+    if(btn){btn.disabled=false;btn.textContent='Convert PDF to CSV';}
+  }
+}
 function renderImportPreview(prepared,fileName){
   pendingImportPreview={...prepared,fileName};
   const body=$('importPreviewBody'),wrap=$('importPreviewWrap'),apply=$('applyImportBtn');
@@ -1880,6 +1947,8 @@ $('uploadBtn')?.addEventListener('click',async()=>{
   const file=$('scheduleFile').files[0];
   if(!file){toast('Choose a PDF, Excel, or CSV file first');return;}
   if(!selectedProjectId){toast('Create/select a project first');return;}
+  convertedCsvRows=null; convertedCsvFilename='';
+  $('convertedCsvWrap')?.classList.add('hidden');
   pendingImportPreview=null;
   $('importPreviewWrap')?.classList.add('hidden');
   $('uploadBtn').disabled=true;$('uploadResult').textContent='Reading schedule...';
@@ -1922,6 +1991,9 @@ $('uploadBtn')?.addEventListener('click',async()=>{
   }finally{$('uploadBtn').disabled=false;}
 });
 $('applyImportBtn')?.addEventListener('click',applyPreparedBaselineImport);
+$('convertPdfBtn')?.addEventListener('click',convertSelectedPdfToCsv);
+$('downloadConvertedCsvBtn')?.addEventListener('click',downloadConvertedCsv);
+
 
 init();
 
