@@ -24,6 +24,7 @@ let saveAndNextRequested = false;
 let gcMobileIssuesOnly = false;
 let subChangedActivityIds = new Set();
 let selfPasswordMode = 'change';
+let pendingImportPreview = null;
 
 const $ = (id) => document.getElementById(id);
 const fmt = (d) => d ? new Date(d + 'T12:00:00').toLocaleDateString() : '—';
@@ -1716,17 +1717,8 @@ async function pdfScheduleRows(file, existingByCode){
   }
   return {rows,matchedActivityIds,matchedWithOneDate,usedOcr:false};
 }
-async function applyBaselineRevisionRows(rawRows,fileName){
-  $('uploadResult').textContent='Creating pre-import backup…';
-  await createBackup({type:'pre_import',sourceFilename:fileName,silent:true});
-  $('uploadResult').textContent='Backup saved. Preparing baseline date update…';
-
-  // Baseline-only safety rule:
-  // - Existing Activity IDs only.
-  // - UPDATE only original_start/original_finish.
-  // - Never insert activities and never write current dates, status, percent, notes,
-  //   description, company/trade, area, duration, flags, or history.
-  let updated=0,skipped=0,unknown=0,noDates=0,ambiguous=0;
+function prepareBaselineRevisionRows(rawRows){
+  let skipped=0,unknown=0,noDates=0,ambiguous=0;
   const existingByCode=new Map((activities||[]).map(a=>[String(a.activity_code||'').trim().toLowerCase(),a]));
   const pending=new Map();
   const conflicted=new Set();
@@ -1754,23 +1746,77 @@ async function applyBaselineRevisionRows(rawRows,fileName){
     pending.set(key,prev);
   }
 
-  const rows=[...pending.values()];
-  for(let i=0;i<rows.length;i++){
-    const row=rows[i];
-    const patch={};
-    if(row.start)patch.original_start=row.start;
-    if(row.finish)patch.original_finish=row.finish;
-    if(!Object.keys(patch).length)continue;
-    const {error}=await sb.from('activities').update(patch).eq('id',row.existing.id).eq('project_id',selectedProjectId);
-    if(error)throw error;
-    updated++;
-    $('uploadResult').textContent=`Updating baseline dates ${updated} of ${rows.length}...`;
+  const rows=[...pending.values()].map(row=>{
+    const proposedStart=row.start||row.existing.original_start||null;
+    const proposedFinish=row.finish||row.existing.original_finish||null;
+    const changed=(proposedStart||null)!==(row.existing.original_start||null)||(proposedFinish||null)!==(row.existing.original_finish||null);
+    return {
+      existing:row.existing,
+      start:row.start,
+      finish:row.finish,
+      proposedStart,
+      proposedFinish,
+      action:changed?'Update':'No Change'
+    };
+  });
+
+  for(const id of conflicted){
+    const existing=(activities||[]).find(a=>a.id===id);
+    if(existing)rows.push({existing,start:null,finish:null,proposedStart:null,proposedFinish:null,action:'Skip',reason:'Conflicting duplicate dates'});
   }
 
-  const {error:logErr}=await sb.from('schedule_uploads').insert({project_id:selectedProjectId,filename:fileName,rows_imported:updated,uploaded_by:session.user.id});
-  if(logErr)console.warn(logErr);
-  await loadActivities();
-  return {updated,skipped,unknown,noDates,ambiguous};
+  rows.sort((a,b)=>String(a.existing?.activity_code||'').localeCompare(String(b.existing?.activity_code||''),undefined,{numeric:true,sensitivity:'base'}));
+  return {rows,skipped,unknown,noDates,ambiguous};
+}
+function renderImportPreview(prepared,fileName){
+  pendingImportPreview={...prepared,fileName};
+  const body=$('importPreviewBody'),wrap=$('importPreviewWrap'),apply=$('applyImportBtn');
+  if(!body||!wrap)return;
+  body.innerHTML=prepared.rows.map(row=>{
+    const a=row.existing||{};
+    const current=`${fmt(a.original_start)} – ${fmt(a.original_finish)}`;
+    const proposed=row.action==='Skip'?'—':`${fmt(row.proposedStart)} – ${fmt(row.proposedFinish)}`;
+    const cls=row.action==='Update'?'status-chip inprogress':row.action==='No Change'?'status-chip':'status-chip delayed';
+    const detail=row.reason?`<div class="muted small">${esc(row.reason)}</div>`:'';
+    return `<tr><td><strong>${esc(a.activity_code||'')}</strong><div class="muted small">${esc(a.activity_name||'')}</div></td><td>${esc(current)}</td><td>${esc(proposed)}</td><td><span class="${cls}">${esc(row.action)}</span>${detail}</td></tr>`;
+  }).join('')||'<tr><td colspan="4" class="muted">No matching activities were found.</td></tr>';
+  wrap.classList.remove('hidden');
+  const updates=prepared.rows.filter(r=>r.action==='Update').length;
+  if(apply){apply.disabled=updates===0;apply.textContent=updates? `Apply ${updates} Baseline Update${updates===1?'':'s'}`:'No Updates to Apply';}
+}
+async function applyPreparedBaselineImport(){
+  if(!pendingImportPreview)return;
+  const rows=pendingImportPreview.rows.filter(r=>r.action==='Update');
+  if(!rows.length){toast('No baseline changes to apply');return;}
+  const btn=$('applyImportBtn'); if(btn)btn.disabled=true;
+  try{
+    $('uploadResult').textContent='Creating pre-import backup…';
+    await createBackup({type:'pre_import',sourceFilename:pendingImportPreview.fileName,silent:true});
+    let updated=0;
+    for(const row of rows){
+      const patch={};
+      if(row.start)patch.original_start=row.start;
+      if(row.finish)patch.original_finish=row.finish;
+      const {error}=await sb.from('activities').update(patch).eq('id',row.existing.id).eq('project_id',selectedProjectId);
+      if(error)throw error;
+      updated++;
+      $('uploadResult').textContent=`Applying baseline updates ${updated} of ${rows.length}…`;
+    }
+    const {error:logErr}=await sb.from('schedule_uploads').insert({project_id:selectedProjectId,filename:pendingImportPreview.fileName,rows_imported:updated,uploaded_by:session.user.id});
+    if(logErr)console.warn(logErr);
+    await loadActivities();
+    $('uploadResult').textContent=`Done: ${updated} baseline date update${updated===1?'':'s'} applied. Current dates, status, percent complete, notes, trade assignments, activity descriptions, and subcontractor history were not changed.`;
+    toast('Baseline dates updated — subcontractor data preserved');
+    pendingImportPreview=null;
+    $('importPreviewWrap')?.classList.add('hidden');
+    if(activeAdminTab==='backups')await loadBackups();
+  }catch(err){
+    console.error(err);
+    $('uploadResult').textContent=`Import error: ${err.message||err}`;
+    toast('Baseline update failed');
+  }finally{
+    if(btn)btn.disabled=false;
+  }
 }
 
 function canonicalCompanyName(name){
@@ -1834,40 +1880,48 @@ $('uploadBtn')?.addEventListener('click',async()=>{
   const file=$('scheduleFile').files[0];
   if(!file){toast('Choose a PDF, Excel, or CSV file first');return;}
   if(!selectedProjectId){toast('Create/select a project first');return;}
+  pendingImportPreview=null;
+  $('importPreviewWrap')?.classList.add('hidden');
   $('uploadBtn').disabled=true;$('uploadResult').textContent='Reading schedule...';
   try{
     const ext=(file.name.split('.').pop()||'').toLowerCase();
     let raw=[];
+    let sourceNote='';
     if(ext==='pdf'){
       const existingByCode=new Map((activities||[]).map(a=>[String(a.activity_code||'').trim().toLowerCase(),a]));
       const parsed=await pdfScheduleRows(file,existingByCode);
       raw=parsed.rows;
+      sourceNote=parsed.usedOcr?'OCR PDF':'PDF';
       if(!raw.length){
         const detail=parsed.matchedActivityIds
           ? ` Found ${parsed.matchedActivityIds} existing Activity ID reference(s), but not two readable dates on the associated rows.`
-          : ' No existing Activity IDs were readable in the PDF text layer.';
+          : ' No existing Activity IDs were readable in the PDF.';
         throw new Error(`No safe baseline updates could be extracted from this PDF.${detail} No schedule data was changed.`);
       }
-      $('uploadResult').textContent=`${parsed.usedOcr?'OCR ':''}PDF read: ${raw.length} safe matching activity rows found from ${parsed.matchedActivityIds} Activity ID reference(s). Verifying baseline dates…`;
     }else if(['xlsx','xls','csv'].includes(ext)){
       const buf=await file.arrayBuffer();
       const wb=XLSX.read(buf,{type:'array',cellDates:false});
       const ws=wb.Sheets[wb.SheetNames[0]];
       raw=XLSX.utils.sheet_to_json(ws,{defval:null});
+      sourceNote=ext==='csv'?'CSV':'Excel';
     }else{
       throw new Error('Use a PDF, Excel, or CSV schedule file.');
     }
 
-    const result=await applyBaselineRevisionRows(raw,file.name);
-    $('uploadResult').textContent=`Done: baseline dates updated for ${result.updated} existing activities. ${result.unknown} unknown Activity IDs skipped; ${result.noDates} rows had no usable baseline dates; ${result.skipped} rows had no Activity ID; ${result.ambiguous} activities had conflicting duplicate dates and were skipped. Current dates, status, percent complete, notes, trade assignments, activity descriptions, and subcontractor history were not changed.`;
-    toast('Baseline dates updated — subcontractor data preserved');
-    if(activeAdminTab==='backups')await loadBackups();
+    const prepared=prepareBaselineRevisionRows(raw);
+    renderImportPreview(prepared,file.name);
+    const updates=prepared.rows.filter(r=>r.action==='Update').length;
+    const unchanged=prepared.rows.filter(r=>r.action==='No Change').length;
+    const skips=prepared.rows.filter(r=>r.action==='Skip').length+prepared.unknown+prepared.noDates+prepared.skipped;
+    $('uploadResult').textContent=`${sourceNote} preview ready: ${updates} update${updates===1?'':'s'}, ${unchanged} no change, ${skips} skipped/unmatched. Nothing has been saved yet.`;
+    toast('Import preview ready');
   }catch(err){
     console.error(err);
     $('uploadResult').textContent=`Import error: ${err.message||err}`;
-    toast('Baseline update failed');
+    toast('Import preview failed');
   }finally{$('uploadBtn').disabled=false;}
 });
+$('applyImportBtn')?.addEventListener('click',applyPreparedBaselineImport);
 
 init();
 
