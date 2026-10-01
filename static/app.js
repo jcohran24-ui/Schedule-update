@@ -1452,6 +1452,119 @@ function excelDate(v){
   const d=new Date(v);if(!isNaN(d))return isoDate(d);
   return null;
 }
+function scheduleDateFromText(v){
+  if(v===null||v===undefined||v==='')return null;
+  const s=String(v).trim().replace(/\s+(A|ACTUAL|\*)$/i,'').trim();
+  let m=s.match(/^(\d{1,2})[\/-](\d{1,2})[\/-](\d{2}|\d{4})$/);
+  if(m){
+    let y=Number(m[3]); if(y<100)y+=y>=70?1900:2000;
+    const mm=Number(m[1]),dd=Number(m[2]);
+    if(mm>=1&&mm<=12&&dd>=1&&dd<=31)return `${y}-${String(mm).padStart(2,'0')}-${String(dd).padStart(2,'0')}`;
+  }
+  const d=new Date(s);
+  if(!isNaN(d)){
+    const y=d.getFullYear(),mm=d.getMonth()+1,dd=d.getDate();
+    return `${y}-${String(mm).padStart(2,'0')}-${String(dd).padStart(2,'0')}`;
+  }
+  return null;
+}
+function pdfDateTokens(text){
+  const re=/\b(?:\d{1,2}[\/-]\d{1,2}[\/-](?:\d{2}|\d{4})|\d{1,2}[-\s](?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Sept|Oct|Nov|Dec)[-\s](?:\d{2}|\d{4})|(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Sept|Oct|Nov|Dec)[-\s]+\d{1,2},?[-\s]+(?:\d{2}|\d{4}))\b/gi;
+  return (String(text||'').match(re)||[]).map(x=>scheduleDateFromText(x)).filter(Boolean);
+}
+function pdfActivityCode(text, existingByCode){
+  const tokens=String(text||'').split(/\s+/).map(x=>x.replace(/^[^A-Za-z0-9]+|[^A-Za-z0-9._-]+$/g,'')).filter(Boolean);
+  for(const token of tokens){
+    const hit=existingByCode.get(token.toLowerCase());
+    if(hit)return hit;
+  }
+  return null;
+}
+async function pdfScheduleRows(file, existingByCode){
+  if(!window.pdfjsLib)throw new Error('PDF reader did not load. Refresh the page and try again.');
+  window.pdfjsLib.GlobalWorkerOptions.workerSrc='https://cdn.jsdelivr.net/npm/pdfjs-dist@3.11.174/build/pdf.worker.min.js';
+  const buf=await file.arrayBuffer();
+  const doc=await window.pdfjsLib.getDocument({data:new Uint8Array(buf)}).promise;
+  const out=[];
+  for(let p=1;p<=doc.numPages;p++){
+    const page=await doc.getPage(p);
+    const content=await page.getTextContent();
+    const groups=[];
+    for(const item of content.items||[]){
+      const txt=String(item.str||'').trim(); if(!txt)continue;
+      const x=Number(item.transform?.[4]||0), y=Number(item.transform?.[5]||0);
+      let g=groups.find(row=>Math.abs(row.y-y)<=2.5);
+      if(!g){g={y,items:[]};groups.push(g);}
+      g.items.push({x,txt});
+    }
+    groups.sort((a,b)=>b.y-a.y);
+    for(const g of groups){
+      g.items.sort((a,b)=>a.x-b.x);
+      const line=g.items.map(i=>i.txt).join(' ');
+      const existing=pdfActivityCode(line,existingByCode);
+      if(!existing)continue;
+      const dates=pdfDateTokens(line);
+      if(dates.length<2)continue;
+      out.push({activity_id:existing.activity_code,baseline_start:dates[0],baseline_finish:dates[1]});
+    }
+  }
+  return out;
+}
+async function applyBaselineRevisionRows(rawRows,fileName){
+  $('uploadResult').textContent='Creating pre-import backup…';
+  await createBackup({type:'pre_import',sourceFilename:fileName,silent:true});
+  $('uploadResult').textContent='Backup saved. Preparing baseline date update…';
+
+  // Baseline-only safety rule:
+  // - Existing Activity IDs only.
+  // - UPDATE only original_start/original_finish.
+  // - Never insert activities and never write current dates, status, percent, notes,
+  //   description, company/trade, area, duration, flags, or history.
+  let updated=0,skipped=0,unknown=0,noDates=0,ambiguous=0;
+  const existingByCode=new Map((activities||[]).map(a=>[String(a.activity_code||'').trim().toLowerCase(),a]));
+  const pending=new Map();
+  const conflicted=new Set();
+
+  for(const rr of rawRows){
+    const r=normalizedRow(rr);
+    const code=pick(r,['activity_id','activity_code','id','activity']);
+    if(!code){skipped++;continue;}
+    const existing=existingByCode.get(String(code).trim().toLowerCase());
+    if(!existing){unknown++;continue;}
+    const start=scheduleDateFromText(pick(r,['baseline_start','original_start','start','start_date']));
+    const finish=scheduleDateFromText(pick(r,['baseline_finish','original_finish','finish','finish_date']));
+    if(!start&&!finish){noDates++;continue;}
+
+    const key=existing.id;
+    if(conflicted.has(key))continue;
+    const prev=pending.get(key)||{existing,start:null,finish:null};
+    if((start&&prev.start&&start!==prev.start)||(finish&&prev.finish&&finish!==prev.finish)){
+      pending.delete(key);conflicted.add(key);ambiguous++;continue;
+    }
+    if(start)prev.start=start;
+    if(finish)prev.finish=finish;
+    pending.set(key,prev);
+  }
+
+  const rows=[...pending.values()];
+  for(let i=0;i<rows.length;i++){
+    const row=rows[i];
+    const patch={};
+    if(row.start)patch.original_start=row.start;
+    if(row.finish)patch.original_finish=row.finish;
+    if(!Object.keys(patch).length)continue;
+    const {error}=await sb.from('activities').update(patch).eq('id',row.existing.id).eq('project_id',selectedProjectId);
+    if(error)throw error;
+    updated++;
+    $('uploadResult').textContent=`Updating baseline dates ${updated} of ${rows.length}...`;
+  }
+
+  const {error:logErr}=await sb.from('schedule_uploads').insert({project_id:selectedProjectId,filename:fileName,rows_imported:updated,uploaded_by:session.user.id});
+  if(logErr)console.warn(logErr);
+  await loadActivities();
+  return {updated,skipped,unknown,noDates,ambiguous};
+}
+
 function canonicalCompanyName(name){
   const clean=String(name||'').trim();
   const key=clean.toLowerCase().replace(/[^a-z0-9]+/g,' ').trim();
@@ -1510,50 +1623,36 @@ $('applyPdfTextCorrectionsBtn')?.addEventListener('click',async()=>{
 });
 
 $('uploadBtn')?.addEventListener('click',async()=>{
-  const file=$('scheduleFile').files[0];if(!file){toast('Choose an Excel or CSV file first');return;}if(!selectedProjectId){toast('Create/select a project first');return;}
+  const file=$('scheduleFile').files[0];
+  if(!file){toast('Choose a PDF, Excel, or CSV file first');return;}
+  if(!selectedProjectId){toast('Create/select a project first');return;}
   $('uploadBtn').disabled=true;$('uploadResult').textContent='Reading schedule...';
   try{
-    const buf=await file.arrayBuffer(); const wb=XLSX.read(buf,{type:'array',cellDates:false}); const ws=wb.Sheets[wb.SheetNames[0]]; const raw=XLSX.utils.sheet_to_json(ws,{defval:null});
-    $('uploadResult').textContent='Creating pre-import backup…';
-    await createBackup({type:'pre_import',sourceFilename:file.name,silent:true});
-    $('uploadResult').textContent='Backup saved. Preparing baseline date update…';
-    // V52: Existing Activity IDs update baseline dates ONLY.
-    // All live/subcontractor-entered fields and schedule setup fields are preserved:
-    // activity description, trade/company, area, duration, current dates, status,
-    // percent complete, notes, scope/review flags, and activity history.
-    // Unknown Activity IDs are reported and skipped rather than inserted automatically.
-    let updated=0,skipped=0,unknown=0,noDates=0;
-    const revisionRows=[];
-    const existingByCode=new Map((activities||[]).map(a=>[String(a.activity_code||'').trim().toLowerCase(),a]));
-    for(const rr of raw){
-      const r=normalizedRow(rr);
-      const code=pick(r,['activity_id','activity_code','id','activity']);
-      if(!code){skipped++;continue;}
-      const cleanCode=String(code).trim();
-      const existing=existingByCode.get(cleanCode.toLowerCase());
-      if(!existing){unknown++;continue;}
-      const start=excelDate(pick(r,['baseline_start','original_start','start','start_date']));
-      const finish=excelDate(pick(r,['baseline_finish','original_finish','finish','finish_date']));
-      if(!start && !finish){noDates++;continue;}
-      const dateOnly={id:existing.id};
-      if(start) dateOnly.original_start=start;
-      if(finish) dateOnly.original_finish=finish;
-      revisionRows.push(dateOnly);
+    const ext=(file.name.split('.').pop()||'').toLowerCase();
+    let raw=[];
+    if(ext==='pdf'){
+      const existingByCode=new Map((activities||[]).map(a=>[String(a.activity_code||'').trim().toLowerCase(),a]));
+      raw=await pdfScheduleRows(file,existingByCode);
+      if(!raw.length)throw new Error('No existing Activity IDs with two readable dates were found in this PDF. No schedule data was changed.');
+      $('uploadResult').textContent=`PDF read: ${raw.length} matching activity rows found. Verifying baseline dates…`;
+    }else if(['xlsx','xls','csv'].includes(ext)){
+      const buf=await file.arrayBuffer();
+      const wb=XLSX.read(buf,{type:'array',cellDates:false});
+      const ws=wb.Sheets[wb.SheetNames[0]];
+      raw=XLSX.utils.sheet_to_json(ws,{defval:null});
+    }else{
+      throw new Error('Use a PDF, Excel, or CSV schedule file.');
     }
-    for(let i=0;i<revisionRows.length;i+=200){
-      const part=revisionRows.slice(i,i+200);
-      const {error}=await sb.from('activities').upsert(part,{onConflict:'id'});
-      if(error)throw error;
-      updated+=part.length;
-      $('uploadResult').textContent=`Updating baseline dates ${updated} of ${revisionRows.length}...`;
-    }
-    const {error:logErr}=await sb.from('schedule_uploads').insert({project_id:selectedProjectId,filename:file.name,rows_imported:updated,uploaded_by:session.user.id}); if(logErr)console.warn(logErr);
-    await loadActivities();
-    $('uploadResult').textContent=`Done: baseline dates updated for ${updated} existing activities. ${unknown} unknown Activity IDs skipped; ${noDates} rows had no baseline dates; ${skipped} rows had no Activity ID. No subcontractor-entered data or activity setup fields were changed.`;
-    toast('Baseline dates updated — all live subcontractor data preserved');
-    if(activeAdminTab==='backups') await loadBackups();
-  }catch(err){console.error(err);$('uploadResult').textContent=`Import error: ${err.message||err}`;toast('Baseline update failed');}
-  finally{$('uploadBtn').disabled=false;}
+
+    const result=await applyBaselineRevisionRows(raw,file.name);
+    $('uploadResult').textContent=`Done: baseline dates updated for ${result.updated} existing activities. ${result.unknown} unknown Activity IDs skipped; ${result.noDates} rows had no usable baseline dates; ${result.skipped} rows had no Activity ID; ${result.ambiguous} activities had conflicting duplicate dates and were skipped. Current dates, status, percent complete, notes, trade assignments, activity descriptions, and subcontractor history were not changed.`;
+    toast('Baseline dates updated — subcontractor data preserved');
+    if(activeAdminTab==='backups')await loadBackups();
+  }catch(err){
+    console.error(err);
+    $('uploadResult').textContent=`Import error: ${err.message||err}`;
+    toast('Baseline update failed');
+  }finally{$('uploadBtn').disabled=false;}
 });
 
 init();
