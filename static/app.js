@@ -1486,29 +1486,99 @@ async function pdfScheduleRows(file, existingByCode){
   const buf=await file.arrayBuffer();
   const doc=await window.pdfjsLib.getDocument({data:new Uint8Array(buf)}).promise;
   const out=[];
+  let matchedActivityIds=0, matchedWithOneDate=0;
+
   for(let p=1;p<=doc.numPages;p++){
     const page=await doc.getPage(p);
     const content=await page.getTextContent();
-    const groups=[];
-    for(const item of content.items||[]){
-      const txt=String(item.str||'').trim(); if(!txt)continue;
-      const x=Number(item.transform?.[4]||0), y=Number(item.transform?.[5]||0);
-      let g=groups.find(row=>Math.abs(row.y-y)<=2.5);
-      if(!g){g={y,items:[]};groups.push(g);}
-      g.items.push({x,txt});
+    const items=(content.items||[]).map(item=>({
+      txt:String(item.str||'').trim(),
+      x:Number(item.transform?.[4]||0),
+      y:Number(item.transform?.[5]||0)
+    })).filter(i=>i.txt);
+
+    // Build activity anchors first. Primavera and similar schedule PDFs often place
+    // the Activity ID and date columns in separate PDF text boxes, so requiring all
+    // values to exist in one exact text line is too strict.
+    const anchors=[];
+    for(const item of items){
+      const existing=pdfActivityCode(item.txt,existingByCode);
+      if(existing)anchors.push({existing,x:item.x,y:item.y});
     }
-    groups.sort((a,b)=>b.y-a.y);
-    for(const g of groups){
-      g.items.sort((a,b)=>a.x-b.x);
-      const line=g.items.map(i=>i.txt).join(' ');
+
+    // Some PDFs split the activity code across several items on the same visual row.
+    // Build wider row bands as a fallback and add any anchors we did not find above.
+    const bands=[];
+    for(const item of items){
+      let band=bands.find(r=>Math.abs(r.y-item.y)<=6);
+      if(!band){band={y:item.y,items:[]};bands.push(band);}
+      band.items.push(item);
+    }
+    for(const band of bands){
+      band.items.sort((a,b)=>a.x-b.x);
+      const line=band.items.map(i=>i.txt).join(' ');
       const existing=pdfActivityCode(line,existingByCode);
-      if(!existing)continue;
-      const dates=pdfDateTokens(line);
-      if(dates.length<2)continue;
-      out.push({activity_id:existing.activity_code,baseline_start:dates[0],baseline_finish:dates[1]});
+      if(existing&&!anchors.some(a=>a.existing.id===existing.id&&Math.abs(a.y-band.y)<=6)){
+        anchors.push({existing,x:band.items[0]?.x||0,y:band.y});
+      }
+    }
+
+    // Collapse duplicate anchors for the same activity on nearly the same row.
+    const unique=[];
+    anchors.sort((a,b)=>b.y-a.y);
+    for(const a of anchors){
+      if(!unique.some(u=>u.existing.id===a.existing.id&&Math.abs(u.y-a.y)<=8))unique.push(a);
+    }
+    unique.sort((a,b)=>b.y-a.y);
+
+    for(let i=0;i<unique.length;i++){
+      const a=unique[i];
+      matchedActivityIds++;
+      const above=i===0 ? Number.POSITIVE_INFINITY : (unique[i-1].y+a.y)/2;
+      const below=i===unique.length-1 ? Number.NEGATIVE_INFINITY : (a.y+unique[i+1].y)/2;
+
+      // Use the vertical region belonging to this activity, including wrapped text.
+      // Cap very large gaps so headers/footers cannot be pulled into the activity row.
+      const top=Math.min(above,a.y+18);
+      const bottom=Math.max(below,a.y-18);
+      const rowItems=items.filter(it=>it.y<=top&&it.y>=bottom).sort((m,n)=>{
+        if(Math.abs(m.y-n.y)>3)return n.y-m.y;
+        return m.x-n.x;
+      });
+      let rowText=rowItems.map(it=>it.txt).join(' ');
+      let dates=pdfDateTokens(rowText);
+
+      // If the visual row still did not expose both dates, make one controlled
+      // expansion around the Activity ID. This handles slightly misaligned date text.
+      if(dates.length<2){
+        rowText=items.filter(it=>Math.abs(it.y-a.y)<=26).sort((m,n)=>{
+          if(Math.abs(m.y-n.y)>3)return n.y-m.y;
+          return m.x-n.x;
+        }).map(it=>it.txt).join(' ');
+        dates=pdfDateTokens(rowText);
+      }
+
+      if(dates.length<2){
+        if(dates.length===1)matchedWithOneDate++;
+        continue;
+      }
+      out.push({
+        activity_id:a.existing.activity_code,
+        baseline_start:dates[0],
+        baseline_finish:dates[1]
+      });
     }
   }
-  return out;
+
+  // De-duplicate identical extracted rows. Conflicting duplicates are intentionally
+  // left for applyBaselineRevisionRows(), which skips them instead of guessing.
+  const seen=new Set();
+  const rows=out.filter(r=>{
+    const key=`${String(r.activity_id).toLowerCase()}|${r.baseline_start}|${r.baseline_finish}`;
+    if(seen.has(key))return false;
+    seen.add(key);return true;
+  });
+  return {rows,matchedActivityIds,matchedWithOneDate};
 }
 async function applyBaselineRevisionRows(rawRows,fileName){
   $('uploadResult').textContent='Creating pre-import backup…';
@@ -1634,9 +1704,15 @@ $('uploadBtn')?.addEventListener('click',async()=>{
     let raw=[];
     if(ext==='pdf'){
       const existingByCode=new Map((activities||[]).map(a=>[String(a.activity_code||'').trim().toLowerCase(),a]));
-      raw=await pdfScheduleRows(file,existingByCode);
-      if(!raw.length)throw new Error('No existing Activity IDs with two readable dates were found in this PDF. No schedule data was changed.');
-      $('uploadResult').textContent=`PDF read: ${raw.length} matching activity rows found. Verifying baseline dates…`;
+      const parsed=await pdfScheduleRows(file,existingByCode);
+      raw=parsed.rows;
+      if(!raw.length){
+        const detail=parsed.matchedActivityIds
+          ? ` Found ${parsed.matchedActivityIds} existing Activity ID reference(s), but not two readable dates on the associated rows.`
+          : ' No existing Activity IDs were readable in the PDF text layer.';
+        throw new Error(`No safe baseline updates could be extracted from this PDF.${detail} No schedule data was changed.`);
+      }
+      $('uploadResult').textContent=`PDF read: ${raw.length} safe matching activity rows found from ${parsed.matchedActivityIds} Activity ID reference(s). Verifying baseline dates…`;
     }else if(['xlsx','xls','csv'].includes(ext)){
       const buf=await file.arrayBuffer();
       const wb=XLSX.read(buf,{type:'array',cellDates:false});
