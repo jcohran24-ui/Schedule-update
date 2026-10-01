@@ -1480,6 +1480,99 @@ function pdfActivityCode(text, existingByCode){
   }
   return null;
 }
+function ocrActivityCode(text, existingByCode){
+  // OCR fallback stays conservative: normalize punctuation/spacing, but require an
+  // exact existing Activity ID after normalization. We do not fuzzy-match IDs.
+  const raw=String(text||'').toUpperCase();
+  const tokens=raw.split(/\s+/).map(x=>x.replace(/[^A-Z0-9._-]/g,'')).filter(Boolean);
+  for(const token of tokens){
+    const exact=existingByCode.get(token.toLowerCase());
+    if(exact)return exact;
+    // Handle OCR inserting/removing separators without changing letters/digits.
+    const compact=token.replace(/[._-]/g,'');
+    for(const [key,val] of existingByCode.entries()){
+      if(key.replace(/[._-]/g,'').toUpperCase()===compact)return val;
+    }
+  }
+  return null;
+}
+async function ocrPdfScheduleRows(doc, existingByCode){
+  if(!window.Tesseract)throw new Error('OCR reader did not load. Refresh the page and try again.');
+  const rows=[];
+  let matchedActivityIds=0,matchedWithOneDate=0;
+  const worker=await window.Tesseract.createWorker('eng');
+  try{
+    for(let p=1;p<=doc.numPages;p++){
+      $('uploadResult').textContent=`Scanned PDF detected. OCR reading page ${p} of ${doc.numPages}…`;
+      const page=await doc.getPage(p);
+      const viewport=page.getViewport({scale:2.25});
+      const canvas=document.createElement('canvas');
+      const ctx=canvas.getContext('2d',{willReadFrequently:true});
+      canvas.width=Math.ceil(viewport.width);
+      canvas.height=Math.ceil(viewport.height);
+      await page.render({canvasContext:ctx,viewport}).promise;
+      const result=await worker.recognize(canvas);
+      const data=result?.data||{};
+      const words=(data.words||[]).map(w=>({
+        txt:String(w.text||'').trim(),
+        x:Number(w.bbox?.x0||0),
+        y:Number(w.bbox?.y0||0),
+        y2:Number(w.bbox?.y1||0),
+        conf:Number(w.confidence??w.conf??0)
+      })).filter(w=>w.txt&&w.conf>=25);
+
+      if(words.length){
+        const bands=[];
+        for(const word of words){
+          const cy=(word.y+word.y2)/2;
+          let band=bands.find(r=>Math.abs(r.cy-cy)<=12);
+          if(!band){band={cy,words:[]};bands.push(band);}
+          band.words.push(word);
+        }
+        bands.sort((a,b)=>a.cy-b.cy);
+        for(const band of bands){
+          band.words.sort((a,b)=>a.x-b.x);
+          const line=band.words.map(w=>w.txt).join(' ');
+          const existing=ocrActivityCode(line,existingByCode);
+          if(!existing)continue;
+          matchedActivityIds++;
+          let dates=pdfDateTokens(line);
+          if(dates.length<2){
+            const nearby=bands.filter(b=>Math.abs(b.cy-band.cy)<=28)
+              .flatMap(b=>b.words).sort((a,b)=>a.x-b.x)
+              .map(w=>w.txt).join(' ');
+            dates=pdfDateTokens(nearby);
+          }
+          if(dates.length<2){
+            if(dates.length===1)matchedWithOneDate++;
+            continue;
+          }
+          rows.push({activity_id:existing.activity_code,baseline_start:dates[0],baseline_finish:dates[1]});
+        }
+      }else{
+        // Some Tesseract builds expose only plain text. Use line parsing as fallback.
+        for(const line of String(data.text||'').split(/\r?\n/)){
+          const existing=ocrActivityCode(line,existingByCode);
+          if(!existing)continue;
+          matchedActivityIds++;
+          const dates=pdfDateTokens(line);
+          if(dates.length<2){if(dates.length===1)matchedWithOneDate++;continue;}
+          rows.push({activity_id:existing.activity_code,baseline_start:dates[0],baseline_finish:dates[1]});
+        }
+      }
+    }
+  }finally{
+    await worker.terminate().catch(()=>{});
+  }
+  const seen=new Set();
+  return {
+    rows:rows.filter(r=>{
+      const key=`${String(r.activity_id).toLowerCase()}|${r.baseline_start}|${r.baseline_finish}`;
+      if(seen.has(key))return false;seen.add(key);return true;
+    }),
+    matchedActivityIds,matchedWithOneDate,usedOcr:true
+  };
+}
 async function pdfScheduleRows(file, existingByCode){
   if(!window.pdfjsLib)throw new Error('PDF reader did not load. Refresh the page and try again.');
   window.pdfjsLib.GlobalWorkerOptions.workerSrc='https://cdn.jsdelivr.net/npm/pdfjs-dist@3.11.174/build/pdf.worker.min.js';
@@ -1578,7 +1671,14 @@ async function pdfScheduleRows(file, existingByCode){
     if(seen.has(key))return false;
     seen.add(key);return true;
   });
-  return {rows,matchedActivityIds,matchedWithOneDate};
+
+  // If the PDF has no usable text-layer Activity IDs, render the pages and OCR them.
+  // OCR is only used to identify existing Activity IDs and two date values. The write
+  // path below still updates baseline fields only and skips ambiguous duplicates.
+  if(!rows.length && matchedActivityIds===0){
+    return await ocrPdfScheduleRows(doc,existingByCode);
+  }
+  return {rows,matchedActivityIds,matchedWithOneDate,usedOcr:false};
 }
 async function applyBaselineRevisionRows(rawRows,fileName){
   $('uploadResult').textContent='Creating pre-import backup…';
@@ -1712,7 +1812,7 @@ $('uploadBtn')?.addEventListener('click',async()=>{
           : ' No existing Activity IDs were readable in the PDF text layer.';
         throw new Error(`No safe baseline updates could be extracted from this PDF.${detail} No schedule data was changed.`);
       }
-      $('uploadResult').textContent=`PDF read: ${raw.length} safe matching activity rows found from ${parsed.matchedActivityIds} Activity ID reference(s). Verifying baseline dates…`;
+      $('uploadResult').textContent=`${parsed.usedOcr?'OCR ':''}PDF read: ${raw.length} safe matching activity rows found from ${parsed.matchedActivityIds} Activity ID reference(s). Verifying baseline dates…`;
     }else if(['xlsx','xls','csv'].includes(ext)){
       const buf=await file.arrayBuffer();
       const wb=XLSX.read(buf,{type:'array',cellDates:false});
