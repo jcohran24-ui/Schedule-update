@@ -1452,19 +1452,30 @@ function pick(o,keys){for(const k of keys){if(o[k]!==undefined && o[k]!==null &&
 function excelDate(v){
   if(v===null||v===undefined||v==='')return null;
   if(typeof v==='number'){const d=XLSX.SSF.parse_date_code(v);if(d)return `${d.y}-${String(d.m).padStart(2,'0')}-${String(d.d).padStart(2,'0')}`;}
-  const d=new Date(v);if(!isNaN(d))return isoDate(d);
+  if(typeof v==='string' && /^\\d{4}-\\d{2}-\\d{2}$/.test(v.trim()))return v.trim();
+  const d=new Date(String(v)+'T12:00:00');if(!isNaN(d))return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
   return null;
 }
 function scheduleDateFromText(v){
   if(v===null||v===undefined||v==='')return null;
   const s=String(v).trim().replace(/\s+(A|ACTUAL|\*)$/i,'').trim();
-  let m=s.match(/^(\d{1,2})[\/-](\d{1,2})[\/-](\d{2}|\d{4})$/);
+
+  // Preserve ISO calendar dates exactly. new Date('YYYY-MM-DD') is parsed as UTC
+  // and can display/store as the prior day in US time zones.
+  let m=s.match(/^(\d{4})-(\d{1,2})-(\d{1,2})$/);
+  if(m){
+    const y=Number(m[1]),mm=Number(m[2]),dd=Number(m[3]);
+    if(mm>=1&&mm<=12&&dd>=1&&dd<=31)return `${y}-${String(mm).padStart(2,'0')}-${String(dd).padStart(2,'0')}`;
+  }
+
+  m=s.match(/^(\d{1,2})[\/-](\d{1,2})[\/-](\d{2}|\d{4})$/);
   if(m){
     let y=Number(m[3]); if(y<100)y+=y>=70?1900:2000;
     const mm=Number(m[1]),dd=Number(m[2]);
     if(mm>=1&&mm<=12&&dd>=1&&dd<=31)return `${y}-${String(mm).padStart(2,'0')}-${String(dd).padStart(2,'0')}`;
   }
-  const d=new Date(s);
+
+  const d=new Date(s+'T12:00:00');
   if(!isNaN(d)){
     const y=d.getFullYear(),mm=d.getMonth()+1,dd=d.getDate();
     return `${y}-${String(mm).padStart(2,'0')}-${String(dd).padStart(2,'0')}`;
