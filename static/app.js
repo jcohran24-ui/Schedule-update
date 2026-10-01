@@ -1469,8 +1469,15 @@ function scheduleDateFromText(v){
   return null;
 }
 function pdfDateTokens(text){
+  let s=String(text||'');
+  // OCR commonly reads separators inconsistently and sometimes confuses O with 0.
+  // Only normalize inside digit-like date fragments; do not alter Activity IDs.
+  s=s.replace(/(?<=\d)[.\\|](?=\d)/g,'/')
+     .replace(/(?<=\d)\s*[-–—]\s*(?=\d)/g,'/')
+     .replace(/\b([0-9O]{1,2})\s*[\/-]\s*([0-9O]{1,2})\s*[\/-]\s*([0-9O]{2,4})\b/g,
+       (_,a,b,y)=>`${a.replace(/O/g,'0')}/${b.replace(/O/g,'0')}/${y.replace(/O/g,'0')}`);
   const re=/\b(?:\d{1,2}[\/-]\d{1,2}[\/-](?:\d{2}|\d{4})|\d{1,2}[-\s](?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Sept|Oct|Nov|Dec)[-\s](?:\d{2}|\d{4})|(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Sept|Oct|Nov|Dec)[-\s]+\d{1,2},?[-\s]+(?:\d{2}|\d{4}))\b/gi;
-  return (String(text||'').match(re)||[]).map(x=>scheduleDateFromText(x)).filter(Boolean);
+  return (s.match(re)||[]).map(x=>scheduleDateFromText(x)).filter(Boolean);
 }
 function pdfActivityCode(text, existingByCode){
   const tokens=String(text||'').split(/\s+/).map(x=>x.replace(/^[^A-Za-z0-9]+|[^A-Za-z0-9._-]+$/g,'')).filter(Boolean);
@@ -1480,18 +1487,47 @@ function pdfActivityCode(text, existingByCode){
   }
   return null;
 }
+function editDistanceOneOrLess(a,b){
+  a=String(a||'');b=String(b||'');
+  if(a===b)return true;
+  if(Math.abs(a.length-b.length)>1)return false;
+  let i=0,j=0,diff=0;
+  while(i<a.length&&j<b.length){
+    if(a[i]===b[j]){i++;j++;continue;}
+    if(++diff>1)return false;
+    if(a.length>b.length)i++;
+    else if(b.length>a.length)j++;
+    else{i++;j++;}
+  }
+  if(i<a.length||j<b.length)diff++;
+  return diff<=1;
+}
 function ocrActivityCode(text, existingByCode){
-  // OCR fallback stays conservative: normalize punctuation/spacing, but require an
-  // exact existing Activity ID after normalization. We do not fuzzy-match IDs.
   const raw=String(text||'').toUpperCase();
   const tokens=raw.split(/\s+/).map(x=>x.replace(/[^A-Z0-9._-]/g,'')).filter(Boolean);
   for(const token of tokens){
     const exact=existingByCode.get(token.toLowerCase());
     if(exact)return exact;
-    // Handle OCR inserting/removing separators without changing letters/digits.
     const compact=token.replace(/[._-]/g,'');
+    const compactMatches=[];
     for(const [key,val] of existingByCode.entries()){
-      if(key.replace(/[._-]/g,'').toUpperCase()===compact)return val;
+      const known=key.replace(/[._-]/g,'').toUpperCase();
+      if(known===compact)compactMatches.push(val);
+    }
+    if(compactMatches.length===1)return compactMatches[0];
+
+    // OCR may confuse one character (for example C10830 -> C1O830).
+    // Recover only when exactly one existing Activity ID is within one edit.
+    if(compact.length>=4){
+      const fuzzy=[];
+      const normalizedToken=compact.replace(/O/g,'0').replace(/I/g,'1');
+      for(const [key,val] of existingByCode.entries()){
+        const known=key.replace(/[._-]/g,'').toUpperCase();
+        const normalizedKnown=known.replace(/O/g,'0').replace(/I/g,'1');
+        if(editDistanceOneOrLess(normalizedToken,normalizedKnown))fuzzy.push(val);
+      }
+      const unique=[...new Map(fuzzy.map(v=>[v.id,v])).values()];
+      if(unique.length===1)return unique[0];
     }
   }
   return null;
