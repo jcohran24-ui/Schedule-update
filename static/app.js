@@ -1531,8 +1531,10 @@ async function applyBaselineRevisionRows(rawRows,fileName){
     if(!code){skipped++;continue;}
     const existing=existingByCode.get(String(code).trim().toLowerCase());
     if(!existing){unknown++;continue;}
-    const start=scheduleDateFromText(pick(r,['baseline_start','original_start','start','start_date']));
-    const finish=scheduleDateFromText(pick(r,['baseline_finish','original_finish','finish','finish_date']));
+    const startValue=pick(r,['baseline_start','original_start','start','start_date']);
+    const finishValue=pick(r,['baseline_finish','original_finish','finish','finish_date']);
+    const start=(typeof startValue==='number'?excelDate(startValue):scheduleDateFromText(startValue)||excelDate(startValue));
+    const finish=(typeof finishValue==='number'?excelDate(finishValue):scheduleDateFromText(finishValue)||excelDate(finishValue));
     if(!start&&!finish){noDates++;continue;}
 
     const key=existing.id;
