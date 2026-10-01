@@ -293,13 +293,9 @@
 
           <div class="admin-tab-panel hidden" data-admin-panel="import">
             <div class="card span-2 activity-admin-only admin-section-card">
-              <div class="admin-section-head"><div><h3>Upload Remaining Schedule</h3><p class="muted small">PDF, Excel, or CSV. Revision imports update baseline start/finish dates only for existing Activity IDs. Foreman/subcontractor data, descriptions, trade assignments, statuses, notes, current dates, percent complete, and history are preserved. Unknown or ambiguous PDF rows are skipped rather than guessed.</p></div></div>
-              <div class="admin-import-drop"><input id="scheduleFile" type="file" accept=".pdf,.xlsx,.xls,.csv"><button id="convertPdfBtn" class="ghost" type="button">Convert PDF to CSV</button><button id="uploadBtn" class="primary" type="button">Preview Import</button></div>
+              <div class="admin-section-head"><div><h3>Upload Remaining Schedule</h3><p class="muted small">Excel or CSV. Revision imports update baseline start/finish dates only for existing Activity IDs. Foreman/subcontractor data, descriptions, trade assignments, statuses, notes, current dates, percent complete, and history are preserved.</p></div></div>
+              <div class="admin-import-drop"><input id="scheduleFile" type="file" accept=".xlsx,.xls,.csv"><button id="uploadBtn" class="primary" type="button">Preview Import</button></div>
               <div id="uploadResult" class="small"></div>
-              <div id="convertedCsvWrap" class="hidden">
-                <div class="admin-section-head"><div><h4>Converted CSV</h4><p class="muted small">The converted CSV contains Activity ID, Baseline Start, and Baseline Finish only. Review or download it, then preview the same converted data below.</p></div><button id="downloadConvertedCsvBtn" class="ghost" type="button">Download CSV</button></div>
-                <textarea id="convertedCsvText" rows="8" readonly></textarea>
-              </div>
               <div id="importPreviewWrap" class="hidden">
                 <div class="admin-section-head"><div><h4>Import Preview</h4><p class="muted small">Review proposed baseline date changes before saving. Only Baseline Start and Baseline Finish can be changed by this import.</p></div><button id="applyImportBtn" class="primary" type="button">Apply Baseline Updates</button></div>
                 <div class="table-wrap inner"><table><thead><tr><th>Activity ID</th><th>Current Baseline</th><th>Proposed Baseline</th><th>Action</th></tr></thead><tbody id="importPreviewBody"></tbody></table></div>
@@ -487,8 +483,6 @@
   <script>window.APP_CONFIG = {supabaseUrl: {{ supabase_url|tojson }}, supabaseAnonKey: {{ supabase_anon_key|tojson }}};</script>
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
-  <script src="https://cdn.jsdelivr.net/npm/pdfjs-dist@3.11.174/build/pdf.min.js"></script>
-  <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
   <script src="/static/app.js"></script>
 </body>
 </html>
