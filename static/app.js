@@ -25,8 +25,6 @@ let gcMobileIssuesOnly = false;
 let subChangedActivityIds = new Set();
 let selfPasswordMode = 'change';
 let pendingImportPreview = null;
-let convertedCsvRows = null;
-let convertedCsvFilename = '';
 
 const $ = (id) => document.getElementById(id);
 const fmt = (d) => d ? new Date(d + 'T12:00:00').toLocaleDateString() : '—';
@@ -1482,254 +1480,6 @@ function scheduleDateFromText(v){
   }
   return null;
 }
-function pdfDateTokens(text){
-  let s=String(text||'');
-  // OCR commonly reads separators inconsistently and sometimes confuses O with 0.
-  // Only normalize inside digit-like date fragments; do not alter Activity IDs.
-  s=s.replace(/(?<=\d)[.\\|](?=\d)/g,'/')
-     .replace(/(?<=\d)\s*[-–—]\s*(?=\d)/g,'/')
-     .replace(/\b([0-9O]{1,2})\s*[\/-]\s*([0-9O]{1,2})\s*[\/-]\s*([0-9O]{2,4})\b/g,
-       (_,a,b,y)=>`${a.replace(/O/g,'0')}/${b.replace(/O/g,'0')}/${y.replace(/O/g,'0')}`);
-  const re=/\b(?:\d{1,2}[\/-]\d{1,2}[\/-](?:\d{2}|\d{4})|\d{1,2}[-\s](?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Sept|Oct|Nov|Dec)[-\s](?:\d{2}|\d{4})|(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Sept|Oct|Nov|Dec)[-\s]+\d{1,2},?[-\s]+(?:\d{2}|\d{4}))\b/gi;
-  return (s.match(re)||[]).map(x=>scheduleDateFromText(x)).filter(Boolean);
-}
-function pdfActivityCode(text, existingByCode){
-  const tokens=String(text||'').split(/\s+/).map(x=>x.replace(/^[^A-Za-z0-9]+|[^A-Za-z0-9._-]+$/g,'')).filter(Boolean);
-  for(const token of tokens){
-    const hit=existingByCode.get(token.toLowerCase());
-    if(hit)return hit;
-  }
-  return null;
-}
-function editDistanceOneOrLess(a,b){
-  a=String(a||'');b=String(b||'');
-  if(a===b)return true;
-  if(Math.abs(a.length-b.length)>1)return false;
-  let i=0,j=0,diff=0;
-  while(i<a.length&&j<b.length){
-    if(a[i]===b[j]){i++;j++;continue;}
-    if(++diff>1)return false;
-    if(a.length>b.length)i++;
-    else if(b.length>a.length)j++;
-    else{i++;j++;}
-  }
-  if(i<a.length||j<b.length)diff++;
-  return diff<=1;
-}
-function ocrActivityCode(text, existingByCode){
-  const raw=String(text||'').toUpperCase();
-  const tokens=raw.split(/\s+/).map(x=>x.replace(/[^A-Z0-9._-]/g,'')).filter(Boolean);
-  for(const token of tokens){
-    const exact=existingByCode.get(token.toLowerCase());
-    if(exact)return exact;
-    const compact=token.replace(/[._-]/g,'');
-    const compactMatches=[];
-    for(const [key,val] of existingByCode.entries()){
-      const known=key.replace(/[._-]/g,'').toUpperCase();
-      if(known===compact)compactMatches.push(val);
-    }
-    if(compactMatches.length===1)return compactMatches[0];
-
-    // OCR may confuse one character (for example C10830 -> C1O830).
-    // Recover only when exactly one existing Activity ID is within one edit.
-    if(compact.length>=4){
-      const fuzzy=[];
-      const normalizedToken=compact.replace(/O/g,'0').replace(/I/g,'1');
-      for(const [key,val] of existingByCode.entries()){
-        const known=key.replace(/[._-]/g,'').toUpperCase();
-        const normalizedKnown=known.replace(/O/g,'0').replace(/I/g,'1');
-        if(editDistanceOneOrLess(normalizedToken,normalizedKnown))fuzzy.push(val);
-      }
-      const unique=[...new Map(fuzzy.map(v=>[v.id,v])).values()];
-      if(unique.length===1)return unique[0];
-    }
-  }
-  return null;
-}
-async function ocrPdfScheduleRows(doc, existingByCode){
-  if(!window.Tesseract)throw new Error('OCR reader did not load. Refresh the page and try again.');
-  const rows=[];
-  let matchedActivityIds=0,matchedWithOneDate=0;
-  const worker=await window.Tesseract.createWorker('eng');
-  try{
-    for(let p=1;p<=doc.numPages;p++){
-      $('uploadResult').textContent=`Scanned PDF detected. OCR reading page ${p} of ${doc.numPages}…`;
-      const page=await doc.getPage(p);
-      const viewport=page.getViewport({scale:2.25});
-      const canvas=document.createElement('canvas');
-      const ctx=canvas.getContext('2d',{willReadFrequently:true});
-      canvas.width=Math.ceil(viewport.width);
-      canvas.height=Math.ceil(viewport.height);
-      await page.render({canvasContext:ctx,viewport}).promise;
-      const result=await worker.recognize(canvas);
-      const data=result?.data||{};
-      const words=(data.words||[]).map(w=>({
-        txt:String(w.text||'').trim(),
-        x:Number(w.bbox?.x0||0),
-        y:Number(w.bbox?.y0||0),
-        y2:Number(w.bbox?.y1||0),
-        conf:Number(w.confidence??w.conf??0)
-      })).filter(w=>w.txt&&w.conf>=25);
-
-      if(words.length){
-        const bands=[];
-        for(const word of words){
-          const cy=(word.y+word.y2)/2;
-          let band=bands.find(r=>Math.abs(r.cy-cy)<=12);
-          if(!band){band={cy,words:[]};bands.push(band);}
-          band.words.push(word);
-        }
-        bands.sort((a,b)=>a.cy-b.cy);
-        for(const band of bands){
-          band.words.sort((a,b)=>a.x-b.x);
-          const line=band.words.map(w=>w.txt).join(' ');
-          const existing=ocrActivityCode(line,existingByCode);
-          if(!existing)continue;
-          matchedActivityIds++;
-          let dates=pdfDateTokens(line);
-          if(dates.length<2){
-            const nearby=bands.filter(b=>Math.abs(b.cy-band.cy)<=28)
-              .flatMap(b=>b.words).sort((a,b)=>a.x-b.x)
-              .map(w=>w.txt).join(' ');
-            dates=pdfDateTokens(nearby);
-          }
-          if(dates.length<2){
-            if(dates.length===1)matchedWithOneDate++;
-            continue;
-          }
-          rows.push({activity_id:existing.activity_code,baseline_start:dates[0],baseline_finish:dates[1]});
-        }
-      }else{
-        // Some Tesseract builds expose only plain text. Use line parsing as fallback.
-        for(const line of String(data.text||'').split(/\r?\n/)){
-          const existing=ocrActivityCode(line,existingByCode);
-          if(!existing)continue;
-          matchedActivityIds++;
-          const dates=pdfDateTokens(line);
-          if(dates.length<2){if(dates.length===1)matchedWithOneDate++;continue;}
-          rows.push({activity_id:existing.activity_code,baseline_start:dates[0],baseline_finish:dates[1]});
-        }
-      }
-    }
-  }finally{
-    await worker.terminate().catch(()=>{});
-  }
-  const seen=new Set();
-  return {
-    rows:rows.filter(r=>{
-      const key=`${String(r.activity_id).toLowerCase()}|${r.baseline_start}|${r.baseline_finish}`;
-      if(seen.has(key))return false;seen.add(key);return true;
-    }),
-    matchedActivityIds,matchedWithOneDate,usedOcr:true
-  };
-}
-async function pdfScheduleRows(file, existingByCode){
-  if(!window.pdfjsLib)throw new Error('PDF reader did not load. Refresh the page and try again.');
-  window.pdfjsLib.GlobalWorkerOptions.workerSrc='https://cdn.jsdelivr.net/npm/pdfjs-dist@3.11.174/build/pdf.worker.min.js';
-  const buf=await file.arrayBuffer();
-  const doc=await window.pdfjsLib.getDocument({data:new Uint8Array(buf)}).promise;
-  const out=[];
-  let matchedActivityIds=0, matchedWithOneDate=0;
-
-  for(let p=1;p<=doc.numPages;p++){
-    const page=await doc.getPage(p);
-    const content=await page.getTextContent();
-    const items=(content.items||[]).map(item=>({
-      txt:String(item.str||'').trim(),
-      x:Number(item.transform?.[4]||0),
-      y:Number(item.transform?.[5]||0)
-    })).filter(i=>i.txt);
-
-    // Build activity anchors first. Primavera and similar schedule PDFs often place
-    // the Activity ID and date columns in separate PDF text boxes, so requiring all
-    // values to exist in one exact text line is too strict.
-    const anchors=[];
-    for(const item of items){
-      const existing=pdfActivityCode(item.txt,existingByCode);
-      if(existing)anchors.push({existing,x:item.x,y:item.y});
-    }
-
-    // Some PDFs split the activity code across several items on the same visual row.
-    // Build wider row bands as a fallback and add any anchors we did not find above.
-    const bands=[];
-    for(const item of items){
-      let band=bands.find(r=>Math.abs(r.y-item.y)<=6);
-      if(!band){band={y:item.y,items:[]};bands.push(band);}
-      band.items.push(item);
-    }
-    for(const band of bands){
-      band.items.sort((a,b)=>a.x-b.x);
-      const line=band.items.map(i=>i.txt).join(' ');
-      const existing=pdfActivityCode(line,existingByCode);
-      if(existing&&!anchors.some(a=>a.existing.id===existing.id&&Math.abs(a.y-band.y)<=6)){
-        anchors.push({existing,x:band.items[0]?.x||0,y:band.y});
-      }
-    }
-
-    // Collapse duplicate anchors for the same activity on nearly the same row.
-    const unique=[];
-    anchors.sort((a,b)=>b.y-a.y);
-    for(const a of anchors){
-      if(!unique.some(u=>u.existing.id===a.existing.id&&Math.abs(u.y-a.y)<=8))unique.push(a);
-    }
-    unique.sort((a,b)=>b.y-a.y);
-
-    for(let i=0;i<unique.length;i++){
-      const a=unique[i];
-      matchedActivityIds++;
-      const above=i===0 ? Number.POSITIVE_INFINITY : (unique[i-1].y+a.y)/2;
-      const below=i===unique.length-1 ? Number.NEGATIVE_INFINITY : (a.y+unique[i+1].y)/2;
-
-      // Use the vertical region belonging to this activity, including wrapped text.
-      // Cap very large gaps so headers/footers cannot be pulled into the activity row.
-      const top=Math.min(above,a.y+18);
-      const bottom=Math.max(below,a.y-18);
-      const rowItems=items.filter(it=>it.y<=top&&it.y>=bottom).sort((m,n)=>{
-        if(Math.abs(m.y-n.y)>3)return n.y-m.y;
-        return m.x-n.x;
-      });
-      let rowText=rowItems.map(it=>it.txt).join(' ');
-      let dates=pdfDateTokens(rowText);
-
-      // If the visual row still did not expose both dates, make one controlled
-      // expansion around the Activity ID. This handles slightly misaligned date text.
-      if(dates.length<2){
-        rowText=items.filter(it=>Math.abs(it.y-a.y)<=26).sort((m,n)=>{
-          if(Math.abs(m.y-n.y)>3)return n.y-m.y;
-          return m.x-n.x;
-        }).map(it=>it.txt).join(' ');
-        dates=pdfDateTokens(rowText);
-      }
-
-      if(dates.length<2){
-        if(dates.length===1)matchedWithOneDate++;
-        continue;
-      }
-      out.push({
-        activity_id:a.existing.activity_code,
-        baseline_start:dates[0],
-        baseline_finish:dates[1]
-      });
-    }
-  }
-
-  // De-duplicate identical extracted rows. Conflicting duplicates are intentionally
-  // left for applyBaselineRevisionRows(), which skips them instead of guessing.
-  const seen=new Set();
-  const rows=out.filter(r=>{
-    const key=`${String(r.activity_id).toLowerCase()}|${r.baseline_start}|${r.baseline_finish}`;
-    if(seen.has(key))return false;
-    seen.add(key);return true;
-  });
-
-  // If the PDF has no usable text-layer Activity IDs, render the pages and OCR them.
-  // OCR is only used to identify existing Activity IDs and two date values. The write
-  // path below still updates baseline fields only and skips ambiguous duplicates.
-  if(!rows.length && matchedActivityIds===0){
-    return await ocrPdfScheduleRows(doc,existingByCode);
-  }
-  return {rows,matchedActivityIds,matchedWithOneDate,usedOcr:false};
-}
 function prepareBaselineRevisionRows(rawRows){
   let skipped=0,unknown=0,noDates=0,ambiguous=0;
   const existingByCode=new Map((activities||[]).map(a=>[String(a.activity_code||'').trim().toLowerCase(),a]));
@@ -1780,71 +1530,6 @@ function prepareBaselineRevisionRows(rawRows){
 
   rows.sort((a,b)=>String(a.existing?.activity_code||'').localeCompare(String(b.existing?.activity_code||''),undefined,{numeric:true,sensitivity:'base'}));
   return {rows,skipped,unknown,noDates,ambiguous};
-}
-function csvEscapeValue(v){
-  const s=String(v??'');
-  return /[",\n\r]/.test(s)?`"${s.replace(/"/g,'""')}"`:s;
-}
-function rowsToBaselineCsv(rows){
-  const header=['Activity ID','Baseline Start','Baseline Finish'];
-  const lines=[header.map(csvEscapeValue).join(',')];
-  for(const r of rows||[]){
-    lines.push([
-      r.activity_id||r.activity_code||'',
-      r.baseline_start||r.original_start||'',
-      r.baseline_finish||r.original_finish||''
-    ].map(csvEscapeValue).join(','));
-  }
-  return lines.join('\r\n');
-}
-function showConvertedCsv(rows,sourceName){
-  convertedCsvRows=rows||[];
-  const base=String(sourceName||'schedule').replace(/\.pdf$/i,'').replace(/[^A-Za-z0-9._-]+/g,'_')||'schedule';
-  convertedCsvFilename=`${base}_converted.csv`;
-  const csv=rowsToBaselineCsv(convertedCsvRows);
-  if($('convertedCsvText'))$('convertedCsvText').value=csv;
-  $('convertedCsvWrap')?.classList.remove('hidden');
-  return csv;
-}
-function downloadConvertedCsv(){
-  if(!convertedCsvRows?.length){toast('Convert a PDF first');return;}
-  const csv=rowsToBaselineCsv(convertedCsvRows);
-  const blob=new Blob([csv],{type:'text/csv;charset=utf-8'});
-  const url=URL.createObjectURL(blob);
-  const a=document.createElement('a');
-  a.href=url;a.download=convertedCsvFilename||'schedule_converted.csv';
-  document.body.appendChild(a);a.click();a.remove();
-  setTimeout(()=>URL.revokeObjectURL(url),1000);
-}
-async function convertSelectedPdfToCsv(){
-  const file=$('scheduleFile')?.files?.[0];
-  if(!file){toast('Choose a PDF first');return;}
-  if(!/\.pdf$/i.test(file.name)){toast('Choose a PDF file to convert');return;}
-  if(!selectedProjectId){toast('Create/select a project first');return;}
-  const btn=$('convertPdfBtn');
-  if(btn){btn.disabled=true;btn.textContent='Converting…';}
-  try{
-    $('uploadResult').textContent='Reading PDF and converting to CSV…';
-    const existingByCode=new Map((activities||[]).map(a=>[String(a.activity_code||'').trim().toLowerCase(),a]));
-    const parsed=await pdfScheduleRows(file,existingByCode);
-    if(!parsed.rows.length){
-      throw new Error('No safe Activity ID/date rows could be converted from this PDF.');
-    }
-    showConvertedCsv(parsed.rows,file.name);
-    const prepared=prepareBaselineRevisionRows(parsed.rows);
-    renderImportPreview(prepared,convertedCsvFilename);
-    const updates=prepared.rows.filter(r=>r.action==='Update').length;
-    const unchanged=prepared.rows.filter(r=>r.action==='No Change').length;
-    const skips=prepared.rows.filter(r=>r.action==='Skip').length+prepared.unknown+prepared.noDates+prepared.skipped;
-    $('uploadResult').textContent=`Converted ${parsed.rows.length} PDF row${parsed.rows.length===1?'':'s'} to CSV. Preview: ${updates} update${updates===1?'':'s'}, ${unchanged} no change, ${skips} skipped/unmatched. Nothing has been saved yet.`;
-    toast('PDF converted to CSV and previewed');
-  }catch(err){
-    console.error(err);
-    $('uploadResult').textContent=`Conversion error: ${err.message||err}`;
-    toast('PDF conversion failed');
-  }finally{
-    if(btn){btn.disabled=false;btn.textContent='Convert PDF to CSV';}
-  }
 }
 function renderImportPreview(prepared,fileName){
   pendingImportPreview={...prepared,fileName};
@@ -1956,44 +1641,26 @@ $('applyPdfTextCorrectionsBtn')?.addEventListener('click',async()=>{
 
 $('uploadBtn')?.addEventListener('click',async()=>{
   const file=$('scheduleFile').files[0];
-  if(!file){toast('Choose a PDF, Excel, or CSV file first');return;}
+  if(!file){toast('Choose an Excel or CSV file first');return;}
   if(!selectedProjectId){toast('Create/select a project first');return;}
-  convertedCsvRows=null; convertedCsvFilename='';
-  $('convertedCsvWrap')?.classList.add('hidden');
   pendingImportPreview=null;
   $('importPreviewWrap')?.classList.add('hidden');
   $('uploadBtn').disabled=true;$('uploadResult').textContent='Reading schedule...';
   try{
     const ext=(file.name.split('.').pop()||'').toLowerCase();
-    let raw=[];
-    let sourceNote='';
-    if(ext==='pdf'){
-      const existingByCode=new Map((activities||[]).map(a=>[String(a.activity_code||'').trim().toLowerCase(),a]));
-      const parsed=await pdfScheduleRows(file,existingByCode);
-      raw=parsed.rows;
-      sourceNote=parsed.usedOcr?'OCR PDF':'PDF';
-      if(!raw.length){
-        const detail=parsed.matchedActivityIds
-          ? ` Found ${parsed.matchedActivityIds} existing Activity ID reference(s), but not two readable dates on the associated rows.`
-          : ' No existing Activity IDs were readable in the PDF.';
-        throw new Error(`No safe baseline updates could be extracted from this PDF.${detail} No schedule data was changed.`);
-      }
-    }else if(['xlsx','xls','csv'].includes(ext)){
-      const buf=await file.arrayBuffer();
-      const wb=XLSX.read(buf,{type:'array',cellDates:false});
-      const ws=wb.Sheets[wb.SheetNames[0]];
-      raw=XLSX.utils.sheet_to_json(ws,{defval:null});
-      sourceNote=ext==='csv'?'CSV':'Excel';
-    }else{
-      throw new Error('Use a PDF, Excel, or CSV schedule file.');
-    }
+    if(!['xlsx','xls','csv'].includes(ext))throw new Error('Use an Excel or CSV schedule file.');
+
+    const buf=await file.arrayBuffer();
+    const wb=XLSX.read(buf,{type:'array',cellDates:false});
+    const ws=wb.Sheets[wb.SheetNames[0]];
+    const raw=XLSX.utils.sheet_to_json(ws,{defval:null});
 
     const prepared=prepareBaselineRevisionRows(raw);
     renderImportPreview(prepared,file.name);
     const updates=prepared.rows.filter(r=>r.action==='Update').length;
     const unchanged=prepared.rows.filter(r=>r.action==='No Change').length;
     const skips=prepared.rows.filter(r=>r.action==='Skip').length+prepared.unknown+prepared.noDates+prepared.skipped;
-    $('uploadResult').textContent=`${sourceNote} preview ready: ${updates} update${updates===1?'':'s'}, ${unchanged} no change, ${skips} skipped/unmatched. Nothing has been saved yet.`;
+    $('uploadResult').textContent=`Preview ready: ${updates} update${updates===1?'':'s'}, ${unchanged} no change, ${skips} skipped/unmatched. Nothing has been saved yet.`;
     toast('Import preview ready');
   }catch(err){
     console.error(err);
@@ -2002,8 +1669,6 @@ $('uploadBtn')?.addEventListener('click',async()=>{
   }finally{$('uploadBtn').disabled=false;}
 });
 $('applyImportBtn')?.addEventListener('click',applyPreparedBaselineImport);
-$('convertPdfBtn')?.addEventListener('click',convertSelectedPdfToCsv);
-$('downloadConvertedCsvBtn')?.addEventListener('click',downloadConvertedCsv);
 
 
 init();
