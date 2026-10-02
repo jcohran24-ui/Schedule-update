@@ -1600,47 +1600,6 @@ async function ensureCompany(name){
   const {data,error}=await sb.from('companies').insert({company_name:clean}).select().single(); if(error)throw error; companies.push(data); return data.id;
 }
 
-const PDF_TEXT_CORRECTIONS = {
-  C5050: 'A5-OH Electrical Conduit',
-  C11130: 'A5-MEPF Trimout',
-  C11420: 'A4-Permanent Power Available to Mech',
-  C11930: 'A6-Air Barrier',
-  C11940: 'A6-CMU Walls',
-  C11980: 'A6-Dry In Complete',
-  C12010: 'A6-Paint & Stain',
-  C12100: 'A6-Paint',
-  C14290: 'Retaining Wall Stucco A5 to ENDO',
-  C15490: 'A5-Air Barrier',
-  C15900: 'A1-Select Drywall at Cooler'
-};
-
-$('applyPdfTextCorrectionsBtn')?.addEventListener('click',async()=>{
-  if(!isActivityAdmin())return;
-  if(!selectedProjectId){toast('Select a project first');return;}
-  const pending=Object.entries(PDF_TEXT_CORRECTIONS).map(([code,name])=>{
-    const a=(activities||[]).find(x=>String(x.activity_code||'').toUpperCase()===code);
-    return a && a.activity_name!==name ? {a,name} : null;
-  }).filter(Boolean);
-  if(!pending.length){$('textCorrectionResult').textContent='All confirmed PDF text corrections are already applied.';return;}
-  if(!confirm(`Apply ${pending.length} confirmed activity-description corrections from the 08/25/2026 All Remaining PDF?\n\nOnly Activity Name text will change. Subcontractor-entered data will not be changed.`))return;
-  const btn=$('applyPdfTextCorrectionsBtn'); btn.disabled=true;
-  try{
-    $('textCorrectionResult').textContent='Creating backup before text corrections…';
-    await createBackup({type:'manual',sourceFilename:'CTCC.00A.West Lot. 2026.08.25 All Remaining.pdf',silent:true});
-    let done=0;
-    for(const {a,name} of pending){
-      const {error}=await sb.from('activities').update({activity_name:name}).eq('id',a.id);
-      if(error)throw error;
-      done++;
-      $('textCorrectionResult').textContent=`Applying text corrections ${done} of ${pending.length}…`;
-    }
-    await loadActivities();
-    $('textCorrectionResult').textContent=`Done: ${done} confirmed activity descriptions corrected. All subcontractor-entered data was preserved.`;
-    toast('PDF text corrections applied');
-  }catch(err){console.error(err);$('textCorrectionResult').textContent=`Correction error: ${err.message||err}`;toast('Text corrections failed');}
-  finally{btn.disabled=false;}
-});
-
 $('uploadBtn')?.addEventListener('click',async()=>{
   const file=$('scheduleFile').files[0];
   if(!file){toast('Choose an Excel or CSV file first');return;}
