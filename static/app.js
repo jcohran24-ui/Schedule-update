@@ -1876,9 +1876,14 @@ function reportTradeMatch(a,tradeId){
  const ids=Array.isArray(tradeId)?tradeId.filter(Boolean):(tradeId?[tradeId]:[]);
  return !ids.length||ids.includes(a?.company_id);
 }
-function activityCommon(a){return {trade:companyName(a.company_id),id:a.activity_code||'',area:a.area||'',section:scheduleSection(a)||'',activity:a.activity_name||'',baseline:`${reportDate(a.original_start)} - ${reportDate(a.original_finish)}`,current:`${reportDate(a.current_start)} - ${reportDate(a.current_finish)}`,status:a.status||'',notes:a.notes||''};}
+function reportActivityDescription(a){
+ const header=scheduleSection(a)||'';
+ const desc=a?.activity_name||'';
+ return header?`${header}\n${desc}`:desc;
+}
+function activityCommon(a){return {trade:companyName(a.company_id),id:a.activity_code||'',area:a.area||'',section:scheduleSection(a)||'',activity:reportActivityDescription(a),baseline:`${reportDate(a.original_start)} - ${reportDate(a.original_finish)}`,current:`${reportDate(a.current_start)} - ${reportDate(a.current_finish)}`,status:a.status||'',notes:a.notes||''};}
 function cols(keys){
- const map={trade:['Trade',1.05],id:['ID',.62],area:['Area',.55],section:['Section',1.05],headeractivity:['Schedule Header / Activity',3.15],priority:['Priority',.58],activity:['Activity Description',2.15],baseline:['Baseline',1.2],current:['Current',1.2],status:['Status',.8],notes:['Notes',2.3],reason:['Critical Reason',1.75],fieldupdate:['Superintendent Field Update',2.35],startvar:['Start Var.',.7],finishvar:['Finish Var.',.75],date:['Date',.92],user:['Changed By',1.05],startchange:['Start Change',1.45],finishchange:['Finish Change',1.45],statuschange:['Status Change',1.25],remaining:['Remaining',.7],pastdue:['Past Due',.65],inprogress:['In Progress',.72],completed:['Completed Wk',.78],lookahead:['4-Week',.62],changes:['Changes Wk',.75],avgvar:['Avg Finish Var.',.85]};
+ const map={trade:['Trade',1.05],id:['ID',.62],area:['Area',.55],section:['Section',1.05],headeractivity:['Schedule Header / Activity',3.15],priority:['Priority',.58],activity:['Activity Header / Description',2.4],baseline:['Baseline',1.2],current:['Current',1.2],status:['Status',.8],notes:['Notes',2.3],reason:['Critical Reason',1.75],fieldupdate:['Superintendent Field Update',2.35],startvar:['Start Var.',.7],finishvar:['Finish Var.',.75],date:['Date',.92],user:['Changed By',1.05],startchange:['Start Change',1.45],finishchange:['Finish Change',1.45],statuschange:['Status Change',1.25],remaining:['Remaining',.7],pastdue:['Past Due',.65],inprogress:['In Progress',.72],completed:['Completed Wk',.78],lookahead:['4-Week',.62],changes:['Changes Wk',.75],avgvar:['Avg Finish Var.',.85]};
  return keys.map(k=>({key:k,label:map[k][0],width:map[k][1]}));
 }
 function section(title,keys,rows,summary=''){return {title,columns:cols(keys),rows,summary};}
@@ -1922,7 +1927,7 @@ async function buildReportPayload(type,tradeId,period){
  let sections=[],subtitle=tradeLabel;
  if(type==='changes'){
    const {start,end}=periodBounds(period);subtitle=`${tradeLabel} | ${dateLabel(start)} - ${dateLabel(end)}`;
-   const rows=history.filter(h=>subIds.has(h.changed_by)&&isMeaningfulHistoryChange(h)&&historyWithin(h,start,end)).filter(h=>reportTradeMatch(activities.find(a=>a.id===h.activity_id),tradeId)).map(h=>{const a=activities.find(x=>x.id===h.activity_id);return {date:new Date(h.changed_at).toLocaleString(),trade:companyName(a?.company_id),id:a?.activity_code||'',activity:a?.activity_name||'',user:profileName(h.changed_by),startchange:`${reportDate(h.old_start)} -> ${reportDate(h.new_start)}`,finishchange:`${reportDate(h.old_finish)} -> ${reportDate(h.new_finish)}`,statuschange:`${h.old_status||'—'} -> ${h.new_status||'—'}`,notes:h.comment||''};});
+   const rows=history.filter(h=>subIds.has(h.changed_by)&&isMeaningfulHistoryChange(h)&&historyWithin(h,start,end)).filter(h=>reportTradeMatch(activities.find(a=>a.id===h.activity_id),tradeId)).map(h=>{const a=activities.find(x=>x.id===h.activity_id);return {date:new Date(h.changed_at).toLocaleString(),trade:companyName(a?.company_id),id:a?.activity_code||'',activity:a?reportActivityDescription(a):'',user:profileName(h.changed_by),startchange:`${reportDate(h.old_start)} -> ${reportDate(h.new_start)}`,finishchange:`${reportDate(h.old_finish)} -> ${reportDate(h.new_finish)}`,statuschange:`${h.old_status||'—'} -> ${h.new_status||'—'}`,notes:h.comment||''};});
    sections=[section('Subcontractor Schedule Changes',['date','trade','id','activity','user','startchange','finishchange','statuschange','notes'],rows,`${rows.length} meaningful subcontractor change${rows.length===1?'':'s'}.`)];
  } else if(type==='trade-performance'){
    const tradeList=tradeIds.length?companies.filter(c=>tradeIds.includes(c.id)):companies;
@@ -1969,14 +1974,14 @@ async function buildReportPayload(type,tradeId,period){
    const priorityRank={HOT:0,Watch:1};
    tradeList.forEach((c,idx)=>{
      const rows=selectedRows.filter(a=>a.company_id===c.id).sort((a,b)=>(priorityRank[activityPriority(a)]??9)-(priorityRank[activityPriority(b)]??9)||chronologicalSort(a,b)).map(a=>({
-       priority:activityPriority(a),id:a.activity_code||'',section:scheduleSection(a)||'',activity:a.activity_name||'',baseline:`${reportDate(a.original_start)} - ${reportDate(a.original_finish)}`,current:`${reportDate(a.current_start)} - ${reportDate(a.current_finish)}`,status:a.status||'',reason:(a.priority_reason||'').trim()||'—',fieldupdate:'Start: ______   Finish: ______   Status: ______\nNotes: __________________________________________'
+       priority:activityPriority(a),id:a.activity_code||'',section:scheduleSection(a)||'',activity:reportActivityDescription(a),baseline:`${reportDate(a.original_start)} - ${reportDate(a.original_finish)}`,current:`${reportDate(a.current_start)} - ${reportDate(a.current_finish)}`,status:a.status||'',reason:(a.priority_reason||'').trim()||'—',fieldupdate:'Start: ______   Finish: ______   Status: ______\nNotes: __________________________________________'
      }));
      if(rows.length){
-       const sec=section(`${c.company_name} - Critical Activities`,['priority','id','section','activity','baseline','current','status','reason','fieldupdate'],rows,`${rows.length} ${includeWatch?'HOT / Watch':'HOT'} activit${rows.length===1?'y':'ies'} requiring field verification. Superintendent: ____________________   Date: __________`);
+       const sec=section(`${c.company_name} - Critical Activities`,['priority','id','activity','baseline','current','status','reason','fieldupdate'],rows,`${rows.length} ${includeWatch?'HOT / Watch':'HOT'} activit${rows.length===1?'y':'ies'} requiring field verification. Superintendent: ____________________   Date: __________`);
        sec.page_break_before=sections.length>0;sections.push(sec);
      }
    });
-   const unassigned=selectedRows.filter(a=>!a.company_id).map(a=>({priority:activityPriority(a),id:a.activity_code||'',section:scheduleSection(a)||'',activity:a.activity_name||'',baseline:`${reportDate(a.original_start)} - ${reportDate(a.original_finish)}`,current:`${reportDate(a.current_start)} - ${reportDate(a.current_finish)}`,status:a.status||'',reason:(a.priority_reason||'').trim()||'—',fieldupdate:'Start: ______   Finish: ______   Status: ______\nNotes: __________________________________________'}));
+   const unassigned=selectedRows.filter(a=>!a.company_id).map(a=>({priority:activityPriority(a),id:a.activity_code||'',section:scheduleSection(a)||'',activity:reportActivityDescription(a),baseline:`${reportDate(a.original_start)} - ${reportDate(a.original_finish)}`,current:`${reportDate(a.current_start)} - ${reportDate(a.current_finish)}`,status:a.status||'',reason:(a.priority_reason||'').trim()||'—',fieldupdate:'Start: ______   Finish: ______   Status: ______\nNotes: __________________________________________'}));
    if(unassigned.length){const sec=section('Unassigned - Critical Activities',['priority','id','section','activity','baseline','current','status','reason','fieldupdate'],unassigned,`${unassigned.length} critical activit${unassigned.length===1?'y':'ies'} without a trade assignment.`);sec.page_break_before=sections.length>0;sections.push(sec);}
    if(!sections.length)sections=[section('Weekly Critical Activities',['priority','id','section','activity','baseline','current','status','reason','fieldupdate'],[],`No ${includeWatch?'HOT or Watch':'HOT'} activities are overdue or overlap this week for the selected trade(s).`)];
    subtitle=`${tradeLabel} | Week of ${dateLabel(weekStart)} - ${dateLabel(weekEnd)} | ${includeWatch?'HOT + Watch':'HOT only'} | ${selectedRows.length} activit${selectedRows.length===1?'y':'ies'}`;
