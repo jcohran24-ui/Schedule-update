@@ -1456,10 +1456,9 @@ function excelDate(v){
 }
 function scheduleDateFromText(v){
   if(v===null||v===undefined||v==='')return null;
-  const s=String(v).trim().replace(/\s+(A|ACTUAL|\*)$/i,'').trim();
+  const s=String(v).trim();
 
-  // Preserve ISO calendar dates exactly. new Date('YYYY-MM-DD') is parsed as UTC
-  // and can display/store as the prior day in US time zones.
+  // Preserve ISO calendar dates exactly so timezone conversion cannot shift the day.
   let m=s.match(/^(\d{4})-(\d{1,2})-(\d{1,2})$/);
   if(m){
     const y=Number(m[1]),mm=Number(m[2]),dd=Number(m[3]);
@@ -1473,11 +1472,14 @@ function scheduleDateFromText(v){
     if(mm>=1&&mm<=12&&dd>=1&&dd<=31)return `${y}-${String(mm).padStart(2,'0')}-${String(dd).padStart(2,'0')}`;
   }
 
-  const d=new Date(s+'T12:00:00');
-  if(!isNaN(d)){
-    const y=d.getFullYear(),mm=d.getMonth()+1,dd=d.getDate();
-    return `${y}-${String(mm).padStart(2,'0')}-${String(dd).padStart(2,'0')}`;
+  m=s.match(/^(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)[-\s](\d{1,2})[-\s](\d{2}|\d{4})$/i);
+  if(m){
+    const months={jan:1,feb:2,mar:3,apr:4,may:5,jun:6,jul:7,aug:8,sep:9,oct:10,nov:11,dec:12};
+    const mm=months[m[1].toLowerCase()],dd=Number(m[2]);
+    let y=Number(m[3]); if(y<100)y+=y>=70?1900:2000;
+    if(dd>=1&&dd<=31)return `${y}-${String(mm).padStart(2,'0')}-${String(dd).padStart(2,'0')}`;
   }
+
   return null;
 }
 function prepareBaselineRevisionRows(rawRows){
