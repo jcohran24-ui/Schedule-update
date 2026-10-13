@@ -1827,7 +1827,7 @@ const REPORT_INFO={
   constraints:{title:'Two-Week Constraint Report',help:'Near-term work that needs attention.',period:false,trade:true,definition:'Includes past due or next-14-day work with notes, scope flags, delayed/on-hold status, missing current dates, or late finish variance.'},
   completed:{title:'Completed This Week Report',help:'Activities moved to Complete during the current week.',period:false,trade:true,definition:'Uses schedule change history for the current Monday-Sunday week and groups completed work by trade.'},
   variance:{title:'Schedule Variance Report',help:'Baseline dates compared with entered current dates.',period:false,trade:true,definition:'Shows start and finish variance in Monday-Friday workdays and sorts the largest delays first.'},
-  'sub-meeting':{title:'Subcontractor Meeting Report',help:'4-week upcoming work that subcontractors have not started.',period:false,trade:true,definition:'Choose All Trades or select multiple trades. Shows only 4-week look-ahead activities that have not started yet. Overdue not-started activities remain included.'}
+  'sub-meeting':{title:'Subcontractor Meeting Report',help:'Upcoming starts, missed starts, and work in progress for subcontractor coordination.',period:false,trade:true,definition:'Choose All Trades or select multiple trades. The report separates activities scheduled to start in the next 4 weeks, overdue not-started activities, and work in progress. Completed items are excluded.'}
 };
 function localDateOnly(d=new Date()){const x=new Date(d);x.setHours(0,0,0,0);return x;}
 function mondayOfWeek(d=new Date()){const x=localDateOnly(d);const day=x.getDay();x.setDate(x.getDate()-((day+6)%7));return x;}
@@ -1883,7 +1883,7 @@ function reportActivityDescription(a){
 }
 function activityCommon(a){return {trade:companyName(a.company_id),id:a.activity_code||'',area:a.area||'',section:scheduleSection(a)||'',activity:reportActivityDescription(a),baseline:`${reportDate(a.original_start)} - ${reportDate(a.original_finish)}`,current:`${reportDate(a.current_start)} - ${reportDate(a.current_finish)}`,status:a.status||'',notes:a.notes||''};}
 function cols(keys){
- const map={trade:['Trade',1.05],id:['ID',.62],area:['Area',.55],section:['Section',1.05],headeractivity:['Schedule Header / Activity',3.15],priority:['Priority',.58],activity:['Activity Header / Description',2.4],baseline:['Baseline',1.2],current:['Current',1.2],status:['Status',.8],notes:['Notes',2.3],reason:['Critical Reason',1.75],fieldupdate:['Superintendent Field Update',2.35],startvar:['Start Var.',.7],finishvar:['Finish Var.',.75],date:['Date',.92],user:['Changed By',1.05],startchange:['Start Change',1.45],finishchange:['Finish Change',1.45],statuschange:['Status Change',1.25],remaining:['Remaining',.7],pastdue:['Past Due',.65],inprogress:['In Progress',.72],completed:['Completed Wk',.78],lookahead:['4-Week',.62],changes:['Changes Wk',.75],avgvar:['Avg Finish Var.',.85]};
+ const map={trade:['Trade',1.05],id:['ID',.62],area:['Area',.55],section:['Section',1.05],headeractivity:['Schedule Header / Activity',3.15],priority:['Priority',.58],activity:['Activity Header / Description',2.4],baseline:['Baseline',1.2],current:['Current',1.2],duration:['Duration (d)',.72],status:['Status',.8],notes:['Notes',2.3],reason:['Critical Reason',1.75],fieldupdate:['Superintendent Field Update',2.35],startvar:['Start Var.',.7],finishvar:['Finish Var.',.75],date:['Date',.92],user:['Changed By',1.05],startchange:['Start Change',1.45],finishchange:['Finish Change',1.45],statuschange:['Status Change',1.25],remaining:['Remaining',.7],pastdue:['Past Due',.65],inprogress:['In Progress',.72],completed:['Completed Wk',.78],lookahead:['4-Week',.62],changes:['Changes Wk',.75],avgvar:['Avg Finish Var.',.85]};
  return keys.map(k=>({key:k,label:map[k][0],width:map[k][1]}));
 }
 function section(title,keys,rows,summary=''){return {title,columns:cols(keys),rows,summary};}
@@ -1986,17 +1986,34 @@ async function buildReportPayload(type,tradeId,period){
    if(!sections.length)sections=[section('Weekly Critical Activities',['priority','id','section','activity','baseline','current','status','reason','fieldupdate'],[],`No ${includeWatch?'HOT or Watch':'HOT'} activities are overdue or overlap this week for the selected trade(s).`)];
    subtitle=`${tradeLabel} | Week of ${dateLabel(weekStart)} - ${dateLabel(weekEnd)} | ${includeWatch?'HOT + Watch':'HOT only'} | ${selectedRows.length} activit${selectedRows.length===1?'y':'ies'}`;
  } else if(type==='sub-meeting'){
-   const byTrade=(a,b)=>(a.trade||'Unassigned').localeCompare(b.trade||'Unassigned')||(a.current||'').localeCompare(b.current||'')||(a.id||'').localeCompare(b.id||'',undefined,{numeric:true});
-   // Keep this meeting handout intentionally simple: only the 4-week look-ahead work
-   // that has not started yet. fourWeekRows() already keeps overdue Not Started work
-   // visible, so missed starts cannot disappear from the packet.
-   const notStartedStatuses=new Set(['Not Started','Starting Soon']);
-   const look=fourWeekRows(tradeId)
-     .filter(a=>notStartedStatuses.has(a.status||'Not Started'))
-     .map(a=>{const common=activityCommon(a);const hdr=scheduleSection(a)||'UNLABELED';return {...common,headeractivity:`${hdr}\n${a.activity_code||''} — ${a.activity_name||''}`};})
-     .sort(byTrade);
-   sections=[section('4-Week Look-Ahead — Not Started',['trade','headeractivity','baseline','current','status','notes'],look,`${look.length} not-started activit${look.length===1?'y':'ies'} in the 4-week look-ahead. Overdue not-started work is included. Each activity shows its schedule header directly above the activity description.`)];
-   subtitle=`${tradeLabel} | Week of ${dateLabel(weekStart)} | Not Started Only | Sorted by Trade`;
+   const today=localDateOnly(), horizon=new Date(today);horizon.setDate(horizon.getDate()+28);
+   const isNotStarted=a=>['Not Started','Starting Soon',''].includes(a.status||'');
+   const sortRows=(a,b)=>(a.trade||'Unassigned').localeCompare(b.trade||'Unassigned')||(a._start||'').localeCompare(b._start||'')||(a.id||'').localeCompare(b.id||'',undefined,{numeric:true});
+   const meetingRow=a=>{
+     const common=activityCommon(a),hdr=scheduleSection(a)||'UNLABELED';
+     return {...common,headeractivity:`${hdr}\n${a.activity_code||''} — ${a.activity_name||''}`,_start:effectiveScheduleStart(a)||'',duration:a.duration_days??a.duration??'—'};
+   };
+   const selected=activities.filter(a=>a.status!=='Complete'&&reportTradeMatch(a,tradeId));
+   const starts=selected.filter(a=>{
+     const start=effectiveScheduleStart(a);
+     if(!start||!isNotStarted(a))return false;
+     const d=new Date(start+'T12:00:00');
+     return d>=today&&d<=horizon;
+   }).map(meetingRow).sort(sortRows);
+   const missed=selected.filter(a=>{
+     const start=effectiveScheduleStart(a);
+     return isNotStarted(a)&&start&&new Date(start+'T12:00:00')<today;
+   }).map(meetingRow).sort(sortRows);
+   const active=selected.filter(a=>a.status==='In Progress').map(meetingRow).sort(sortRows);
+   const keys=['trade','headeractivity','baseline','current','duration','status','notes'];
+   const stripInternal=rows=>rows.map(({_start,...row})=>row);
+   sections=[
+     section('Scheduled to Start — Next 4 Weeks',keys,stripInternal(starts),`${starts.length} upcoming start${starts.length===1?'':'s'} | ${dateLabel(today)} through ${dateLabel(horizon)}.`),
+     section('Not Started — Missed / Overdue Starts',keys,stripInternal(missed),`${missed.length} activit${missed.length===1?'y':'ies'} with a planned start date before today and no recorded start.`),
+     section('Work In Progress',keys,stripInternal(active),`${active.length} activit${active.length===1?'y':'ies'} currently marked In Progress, including work extending beyond the four-week window.`)
+   ];
+   subtitle=`${tradeLabel} | ${dateLabel(today)} - ${dateLabel(horizon)} | ${starts.length} upcoming | ${missed.length} not started / overdue | ${active.length} in progress | Grouped by Trade`;
+
  }
  return {project_name:$('projectLabel')?.textContent||'CTCC Oasis',title:info.title,subtitle,sections,filename:reportFileName(info.title)};
 }
